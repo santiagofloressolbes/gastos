@@ -236,8 +236,8 @@ function personaMatchers(){
 }
 
 /* ---------- captura ---------- */
-const st={tipo:'Gasto',ambito:'Personal',amount:'',desc:'',cat:null,catAuto:false,people:new Set(),dismissed:new Set(),fecha:todayStr(),extraPeople:[]};
-function resetForm(){Object.assign(st,{amount:'',desc:'',cat:null,catAuto:false,people:new Set(),dismissed:new Set(),fecha:todayStr(),extraPeople:[]});$('#desc').value='';renderAdd()}
+const st={tipo:'Gasto',ambito:'Personal',amount:'',desc:'',cat:null,catAuto:false,people:new Set(),dismissed:new Set(),fecha:todayStr(),extraPeople:[],editId:null};
+function resetForm(){Object.assign(st,{amount:'',desc:'',cat:null,catAuto:false,people:new Set(),dismissed:new Set(),fecha:todayStr(),extraPeople:[],editId:null});$('#desc').value='';renderAdd()}
 const amtNum=()=>parseFloat((st.amount||'0').replace(',','.'))||0;
 function renderAmount(){
   const a=$('#amount'); a.classList.toggle('empty',!st.amount);
@@ -245,7 +245,7 @@ function renderAmount(){
   $('#amtTxt').textContent=t.includes(',')?ig+','+(d??''):ig;
   const ok=amtNum()>0&&st.cat;
   $('#save').disabled=!ok;
-  $('#save').textContent=ok?'Guardar':(amtNum()>0?'Elige una categoría':'Escribe el monto');
+  $('#save').textContent=ok?(st.editId?'Guardar cambios':'Guardar'):(amtNum()>0?'Elige una categoría':'Escribe el monto');
 }
 function renderAdd(){
   $$('#tipoSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===st.tipo));
@@ -266,6 +266,7 @@ function renderAdd(){
   $('#people').innerHTML=names.slice(0,14).map(n=>`<button class="chip ${st.people.has(n)?'on':''}" data-p="${esc(n)}" aria-pressed="${st.people.has(n)}">${esc(n)}</button>`).join('')+`<button class="chip ghost" id="newP">+ Nueva</button>`;
   $('#dateBtn').firstChild.textContent=st.fecha===todayStr()?'Hoy':(()=>{const [y,m,d]=st.fecha.split('-');return `${+d} ${MESC[m-1]}`})();
   $('#dateIn').value=st.fecha;
+  if($('#v-add').classList.contains('on')) $('#title').textContent=st.editId?'Editar movimiento':'Registrar';
   renderAmount();
 }
 function onDesc(){
@@ -311,7 +312,9 @@ function save(){
   const monto=Math.round(amtNum()*100)/100; if(!(monto>0)||!st.cat) return;
   const item={id:uid(),fecha:st.fecha,tipo:st.tipo,monto,descripcion:st.desc.trim()||st.cat,categoria:st.cat,ambito:st.ambito,personas:[...st.people].join(', '),fecha_aprox:'No',nota:''};
   for(const n of st.extraPeople) if(st.people.has(n)&&!db.personas.some(p=>p.nombre===n)) db.personas.push({nombre:n,alias:''});
+  const editing=st.editId; if(editing) removeMov(editing);
   db.movimientos.push(item); queue.push(item); idx=null; persist();
+  if(editing){toast(`Cambios guardados · ${eur(monto)} en ${st.cat}`); resetForm(); tab('his'); sync(); return}
   toast(`Guardado · ${eur(monto)} en ${st.cat}`,()=>removeMov(item.id));
   resetForm(); renderPill(); sync();
 }
@@ -388,8 +391,9 @@ function renderHis(){
   $('#cfgBtn').onclick=openSettings;
   v.querySelectorAll('.mov').forEach(b=>b.onclick=()=>{
     const m=db.movimientos.find(x=>x.id===b.dataset.id); if(!m) return;
-    openSheet(`<h2>${esc(m.descripcion)}</h2><p>${eur(m.monto)} · ${esc(m.categoria)} · ${esc(m.ambito)}${m.personas?' · con '+esc(m.personas):''}<br>${m.fecha}${m.fecha_aprox==='Sí'?' (fecha aproximada)':''}</p><div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Eliminar</button></div>`);
-    $('#sNo').onclick=closeSheet; $('#sDel').onclick=()=>{closeSheet();removeMov(m.id);toast('Movimiento eliminado')};
+    openSheet(`<h2>${esc(m.descripcion)}</h2><p>${eur(m.monto)} · ${esc(m.categoria)} · ${esc(m.ambito)}${m.personas?' · con '+esc(m.personas):''}<br>${m.fecha}${m.fecha_aprox==='Sí'?' (fecha aproximada)':''}</p><div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="secondary" id="sEdit">Editar</button><button class="primary danger" id="sDel">Eliminar</button></div>`);
+    $('#sNo').onclick=closeSheet;
+    $('#sEdit').onclick=()=>{closeSheet(); Object.assign(st,{tipo:m.tipo,ambito:m.ambito,amount:String(m.monto).replace('.',','),desc:m.descripcion,cat:m.categoria,catAuto:false,people:new Set(String(m.personas||'').split(',').map(x=>x.trim()).filter(Boolean)),dismissed:new Set(),fecha:m.fecha,extraPeople:[],editId:m.id}); $('#desc').value=m.descripcion; tab('add'); renderAdd()}; $('#sDel').onclick=()=>{closeSheet();removeMov(m.id);toast('Movimiento eliminado')};
   });
 }
 
@@ -422,6 +426,7 @@ $('#scrim').onclick=e=>{if(e.target.id==='scrim'&&cfg) closeSheet()};
 /* ---------- navegación ---------- */
 const TITLES={add:'Registrar',sum:'Resumen',his:'Historial'};
 function tab(t){
+  if(t!=='add'&&st.editId&&!(t==='his'&&!$('#v-add').classList.contains('on'))) resetForm();
   $$('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+t));
   $$('.tabs button').forEach(b=>b.toggleAttribute('aria-current',b.dataset.tab===t)); $$('.tabs button').forEach(b=>{if(b.dataset.tab===t) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current')});
   $('#title').textContent=TITLES[t]; $('#main').scrollTop=0; LS.set('tab',t);
