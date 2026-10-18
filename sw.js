@@ -1,5 +1,5 @@
 // Service worker: deja la app disponible sin conexión.
-const CACHE = 'gastos-v7';
+const CACHE = 'gastos-v8';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './fonts/opensans-latin-400.woff2', './fonts/opensans-latin-600.woff2', './fonts/opensans-latin-700.woff2',
   './fonts/opensans-latin-ext-400.woff2', './fonts/opensans-latin-ext-600.woff2', './fonts/opensans-latin-ext-700.woff2'];
