@@ -1,0 +1,12 @@
+Code.gs
+CLAUDE.md
+*.xlsx
+*.xls
+*.csv
+.env
+.env.*
+*.bak
+Captura*
+Screenshot*
+.DS_Store
+Thumbs.db

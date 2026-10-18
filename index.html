@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#E7EEEB" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0D1816" media="(prefers-color-scheme: dark)">
@@ -396,14 +397,14 @@ function renderHis(){
   let last='';
   if(!list.length) html+='<div class="empty-msg">Todavía no hay movimientos. Registra el primero en la pestaña Registrar.</div>';
   for(const m of list){
-    if(m.fecha!==last){last=m.fecha; const [y,mo,d]=m.fecha.split('-'); html+=`<div class="day">${m.fecha===todayStr()?'Hoy':`${+d} de ${MES[mo-1]} ${y}`}</div>`}
+    if(m.fecha!==last){last=m.fecha; const [y,mo,d]=m.fecha.split('-'); html+=`<div class="day">${m.fecha===todayStr()?'Hoy':esc(`${+d} de ${MES[mo-1]} ${y}`)}</div>`}
     html+=`<button class="mov" data-id="${esc(m.id)}"><span class="d">${esc(m.descripcion)}</span><span class="s">${esc(m.categoria)}${m.personas?' · '+esc(m.personas):''}${m.ambito!=='Personal'&&m.ambito!==m.categoria?' · '+esc(m.ambito):''}</span><span class="a ${m.tipo==='Ingreso'?'in':''}">${m.tipo==='Ingreso'?'+':''}${eur(m.monto)}</span></button>`;
   }
   v.innerHTML=html;
   $('#cfgBtn').onclick=openSettings;
   v.querySelectorAll('.mov').forEach(b=>b.onclick=()=>{
     const m=db.movimientos.find(x=>x.id===b.dataset.id); if(!m) return;
-    openSheet(`<h2>${esc(m.descripcion)}</h2><p>${eur(m.monto)} · ${esc(m.categoria)} · ${esc(m.ambito)}${m.personas?' · con '+esc(m.personas):''}<br>${m.fecha}${m.fecha_aprox==='Sí'?' (fecha aproximada)':''}</p><div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="secondary" id="sEdit">Editar</button><button class="primary danger" id="sDel">Eliminar</button></div>`);
+    openSheet(`<h2>${esc(m.descripcion)}</h2><p>${eur(m.monto)} · ${esc(m.categoria)} · ${esc(m.ambito)}${m.personas?' · con '+esc(m.personas):''}<br>${esc(m.fecha)}${m.fecha_aprox==='Sí'?' (fecha aproximada)':''}</p><div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="secondary" id="sEdit">Editar</button><button class="primary danger" id="sDel">Eliminar</button></div>`);
     $('#sNo').onclick=closeSheet;
     $('#sEdit').onclick=()=>{closeSheet(); Object.assign(st,{tipo:m.tipo,ambito:m.ambito,amount:String(m.monto).replace('.',','),desc:m.descripcion,cat:m.categoria,catAuto:false,people:new Set(String(m.personas||'').split(',').map(x=>x.trim()).filter(Boolean)),dismissed:new Set(),fecha:m.fecha,extraPeople:[],editId:m.id}); $('#desc').value=m.descripcion; tab('add'); renderAdd()}; $('#sDel').onclick=()=>{closeSheet();removeMov(m.id);toast('Movimiento eliminado')};
   });
