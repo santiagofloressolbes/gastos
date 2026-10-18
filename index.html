@@ -34,19 +34,25 @@ button,input,select{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer;padding:0}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:10px}
 #app{display:flex;flex-direction:column;height:100dvh;max-width:560px;margin:0 auto;position:relative}
-header{display:flex;align-items:center;justify-content:space-between;padding:calc(var(--sat) + 10px) 18px 6px}
-header h1{font:700 22px/1.1 var(--num);margin:0;letter-spacing:-.01em}
+header{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:calc(var(--sat) + 60px);padding:calc(var(--sat) + 10px) 18px 6px}
+header h1{font:700 22px/1.1 var(--num);margin:0;letter-spacing:-.01em;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #upd{margin:2px 18px 6px;min-height:40px;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-size:14.5px}
 #upd[hidden]{display:none}
-.syncbtn{display:flex;align-items:center;gap:8px;min-height:44px;min-width:44px;max-width:80%;padding:4px 12px;border-radius:14px;background:var(--chip);color:var(--ink);text-align:right}
-.syncbtn svg{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.syncbtn .st{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;min-width:0}
+.syncbtn{flex:none;display:flex;align-items:center;justify-content:flex-end;min-width:44px;min-height:44px;max-width:64%;color:var(--ink);text-align:right}
+.syncbtn .vis{display:flex;align-items:center;gap:8px;padding:4px 12px;min-height:40px;border-radius:14px;background:var(--chip);transition:padding .25s,gap .25s,min-height .25s,border-radius .25s,box-shadow .25s}
+.syncbtn svg{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:width .25s,height .25s}
+.syncbtn .st{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;min-width:0;max-width:230px;max-height:36px;overflow:hidden;white-space:nowrap;transition:max-width .25s,max-height .25s,opacity .2s}
 .syncbtn b{font-size:14px;font-weight:650}
 .syncbtn small{font-size:11.5px;color:var(--muted)}
-.syncbtn.wait{box-shadow:inset 0 0 0 1.5px var(--accent)}
-.syncbtn.err{box-shadow:inset 0 0 0 1.5px var(--bad)} .syncbtn.err small{color:var(--bad)}
+.syncbtn .dot{width:0;height:7px;border-radius:50%;background:var(--good);flex:none;transition:width .25s}
+.syncbtn.wait .vis{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.syncbtn.err .vis{box-shadow:inset 0 0 0 1.5px var(--bad)} .syncbtn.err small{color:var(--bad)}
 .syncbtn.off svg{color:var(--muted)}
 .syncbtn.spin svg{animation:spin 1s linear infinite}
+.syncbtn.compact .vis{padding:6px 10px;gap:6px;min-height:0;border-radius:99px;background:var(--chip)}
+.syncbtn.compact svg{width:15px;height:15px;color:var(--muted)}
+.syncbtn.compact .st{max-width:0;max-height:0;opacity:0}
+.syncbtn.compact .dot{width:7px}
 @keyframes spin{to{transform:rotate(360deg)}}
 main{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:0 18px 18px}
 .view{display:none} .view.on{display:block}
@@ -138,12 +144,12 @@ svg text{font-family:var(--sans)}
 #toast{position:fixed;left:50%;bottom:calc(var(--sab) + 76px);transform:translate(-50%,16px);background:var(--primary-bg);color:var(--primary-fg);padding:10px 8px 10px 16px;border-radius:14px;display:flex;align-items:center;gap:10px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:30;width:max-content;max-width:calc(100vw - 32px);font-size:15px}
 #toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #toast button{font-weight:700;padding:6px 10px;border-radius:9px;text-decoration:underline}
-@media (prefers-reduced-motion:reduce){#toast{transition:none} .syncbtn.spin svg{animation:none}}
+@media (prefers-reduced-motion:reduce){#toast{transition:none} .syncbtn.spin svg{animation:none} .syncbtn .vis,.syncbtn svg,.syncbtn .st,.syncbtn .dot{transition:none}}
 </style>
 </head>
 <body>
 <div id="app" class="">
-  <header><h1 id="title">Registrar</h1><button class="syncbtn" id="sync" type="button" aria-label="Sincronizar ahora"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span class="st"><b id="syncL">Sin configurar</b><small id="syncN"></small></span></button></header>
+  <header><h1 id="title">Registrar</h1><button class="syncbtn" id="sync" type="button" aria-label="Sincronizar ahora"><span class="vis"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span class="st"><b id="syncL">Sin configurar</b><small id="syncN"></small></span><i class="dot" aria-hidden="true"></i></span></button></header>
   <button id="upd" hidden>Hay una versión nueva · <b>Actualizar</b></button>
   <main id="main">
     <section class="view on" id="v-add" aria-label="Registrar movimiento">
@@ -211,8 +217,9 @@ async function api(body){
   return j;
 }
 const RETRY=[2000,5000,15000,45000];   // espera antes de cada reintento automático (5 intentos en total)
-let syncing=false, again=false, attempt=0, retryT=null, halt=null, lastSync=LS.get('lastsync',0), rejected=LS.get('rejected',[]), syncState={k:'idle'};
+let syncing=false, again=false, attempt=0, retryT=null, halt=null, lastSync=LS.get('lastsync',0), rejected=LS.get('rejected',[]), syncState={k:'idle'}, compact=false, compactT=null;
 const STOP_MSG={clave:'La clave no es correcta',bloqueado:'Demasiados intentos, espera unos 15 minutos',config:'Falta configurar el script'};
+const STOP_SHORT={clave:'La clave no es correcta',bloqueado:'Espera unos 15 min',config:'Falta configurar el script'};   // versión corta para el botón; la larga va en el aria-label
 function setPill(k,code){syncState={k,code};renderPill()}
 function ago(t){
   if(!t) return 'aún sin sincronizar';
@@ -222,22 +229,26 @@ function ago(t){
 }
 function renderPill(){
   const b=$('#sync'), n=queue.length+delQ.length, k=syncState.k, off=!navigator.onLine||k==='off', nr=rejected.length;
-  let label, cls='', note=`Última sincronización: ${ago(lastSync)}`;
+  let label, cls='', note=`Última vez: ${ago(lastSync)}`, full='';
   if(!cfg){label='Sin configurar'; cls='wait'; note='Toca para conectar'}
   else {
     if(k==='sync'){label='Sincronizando…'; cls='wait'}
-    else if(off){label='Sin conexión'; cls='off'; if(n) note=`${n} en cola · última: ${ago(lastSync)}`}
+    else if(off){label=n?`Sin conexión · ${n} en cola`:'Sin conexión'; cls='off'}
     else if(n){label=`Pendiente (${n})`; cls='wait'}
     else if(k==='retry'||k==='fail'||k==='stop') label='Sin sincronizar';
     else label='Sincronizado';
-    if(k==='retry'&&!off){note='No se pudo sincronizar, reintentando…'; cls='wait'}
-    else if(k==='fail'&&!off){note='No se pudo sincronizar. Toca para reintentar.'; cls='err'}
-    else if(k==='stop'){note=STOP_MSG[syncState.code]||'No se pudo sincronizar'; cls='err'}
-    else if(nr&&k!=='sync'){note=`${nr} movimiento${nr>1?'s':''} no válido${nr>1?'s':''}. Toca para revisar.`; cls='err'}
+    if(k==='retry'&&!off){note='Reintentando…'; full='No se pudo sincronizar, reintentando…'; cls='wait'}
+    else if(k==='fail'&&!off){note='Toca para reintentar'; full='No se pudo sincronizar. Toca para reintentar.'; cls='err'}
+    else if(k==='stop'){note=STOP_SHORT[syncState.code]||'No se pudo sincronizar'; full=STOP_MSG[syncState.code]||note; cls='err'}
+    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
   }
-  b.className='syncbtn '+cls+(k==='sync'?' spin':'');
+  // Compacto (solo icono y puntito) 3 s después de quedar todo sincronizado; se expande en cuanto hay algo que decir.
+  const calm=!!cfg&&k==='ok'&&!n&&!nr&&!off;
+  if(calm){ if(!compact&&!compactT) compactT=setTimeout(()=>{compactT=null;compact=true;renderPill()},3000) }
+  else { clearTimeout(compactT); compactT=null; compact=false }
+  b.className='syncbtn '+cls+(k==='sync'?' spin':'')+(compact?' compact':'');
   $('#syncL').textContent=label; $('#syncN').textContent=note;
-  b.setAttribute('aria-label',`Sincronizar ahora. ${label}. ${note}`);
+  b.setAttribute('aria-label',`Sincronizar ahora. ${label}. ${full||note}`);
 }
 function showRejected(){
   openSheet(`<h2>Movimientos no válidos</h2><p>No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.</p>${rejected.map(m=>`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}</p>`).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
@@ -347,7 +358,7 @@ function renderAdd(){
   $('#dateTxt').textContent=st.fecha===todayStr()?'Hoy':st.fecha===yesterdayStr()?'Ayer':(()=>{const [y,m,d]=st.fecha.split('-');return `${+d} ${MESC[m-1]}`})();
   const yOn=st.fecha===yesterdayStr(); $('#yBtn').classList.toggle('on',yOn); $('#yBtn').setAttribute('aria-pressed',yOn);
   $('#dateIn').value=st.fecha;
-  if($('#v-add').classList.contains('on')) $('#title').textContent=st.editId?'Editar movimiento':'Registrar';
+  if($('#v-add').classList.contains('on')) $('#title').textContent=st.editId?'Editar':'Registrar';
   renderAmount();
 }
 function onDesc(){
