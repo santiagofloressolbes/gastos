@@ -38,9 +38,16 @@ header{display:flex;align-items:center;justify-content:space-between;padding:cal
 header h1{font:700 22px/1.1 var(--num);margin:0;letter-spacing:-.01em}
 #upd{margin:2px 18px 6px;min-height:40px;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-size:14.5px}
 #upd[hidden]{display:none}
-.pill{font-size:12.5px;color:var(--muted);background:var(--chip);border-radius:99px;padding:5px 11px;display:flex;align-items:center;gap:6px;min-height:28px}
-.pill i{width:7px;height:7px;border-radius:50%;background:var(--good);display:block}
-.pill.err i{background:var(--bad)} .pill.off i{background:var(--muted)} .pill.wait i{background:var(--accent)}
+.syncbtn{display:flex;align-items:center;gap:8px;min-height:44px;min-width:44px;max-width:80%;padding:4px 12px;border-radius:14px;background:var(--chip);color:var(--ink);text-align:right}
+.syncbtn svg{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.syncbtn .st{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;min-width:0}
+.syncbtn b{font-size:14px;font-weight:650}
+.syncbtn small{font-size:11.5px;color:var(--muted)}
+.syncbtn.wait{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.syncbtn.err{box-shadow:inset 0 0 0 1.5px var(--bad)} .syncbtn.err small{color:var(--bad)}
+.syncbtn.off svg{color:var(--muted)}
+.syncbtn.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 main{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:0 18px 18px}
 .view{display:none} .view.on{display:block}
 .tabs{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-top:1px solid var(--line);padding:6px 8px calc(var(--sab) + 6px)}
@@ -131,12 +138,12 @@ svg text{font-family:var(--sans)}
 #toast{position:fixed;left:50%;bottom:calc(var(--sab) + 76px);transform:translate(-50%,16px);background:var(--primary-bg);color:var(--primary-fg);padding:10px 8px 10px 16px;border-radius:14px;display:flex;align-items:center;gap:10px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:30;width:max-content;max-width:calc(100vw - 32px);font-size:15px}
 #toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #toast button{font-weight:700;padding:6px 10px;border-radius:9px;text-decoration:underline}
-@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+@media (prefers-reduced-motion:reduce){#toast{transition:none} .syncbtn.spin svg{animation:none}}
 </style>
 </head>
 <body>
 <div id="app" class="">
-  <header><h1 id="title">Registrar</h1><button class="pill wait" id="sync" aria-label="Estado de sincronización"><i></i><span>Sin configurar</span></button></header>
+  <header><h1 id="title">Registrar</h1><button class="syncbtn" id="sync" type="button" aria-label="Sincronizar ahora"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span class="st"><b id="syncL">Sin configurar</b><small id="syncN"></small></span></button></header>
   <button id="upd" hidden>Hay una versión nueva · <b>Actualizar</b></button>
   <main id="main">
     <section class="view on" id="v-add" aria-label="Registrar movimiento">
@@ -189,36 +196,98 @@ let queue=LS.get('queue',[]), delQ=LS.get('delq',[]);
 const persist=()=>{LS.set('db',db);LS.set('queue',queue);LS.set('delq',delQ)};
 
 /* ---------- red ---------- */
+// Cualquier fallo se reduce a un código interno; el texto crudo del error nunca llega a la pantalla.
+const syncErr=code=>Object.assign(new Error(code),{code});
+const STOP_CODES=['clave','bloqueado','config'];   // no se reintentan solos
 async function api(body){
-  const r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({key:cfg.key,...body})});
-  return r.json();
-}
-let syncing=false, syncState={k:'wait',msg:''};
-function setPill(k,msg=''){syncState={k,msg};renderPill()}
-function renderPill(){
-  const p=$('#sync'), n=queue.length+delQ.length; let t;
-  p.className='pill '+({ok:'',sync:'wait',err:'err',off:'off',wait:'wait'}[syncState.k]||'');
-  if(!cfg) t='Sin configurar';
-  else if(syncState.k==='sync') t='Sincronizando…';
-  else if(syncState.k==='err') t=syncState.msg||'Error al sincronizar';
-  else if(syncState.k==='off'||!navigator.onLine) t=n?`Sin conexión · ${n} pendiente${n>1?'s':''}`:'Sin conexión';
-  else t=n?`${n} pendiente${n>1?'s':''}`:'Sincronizado';
-  p.querySelector('span').textContent=t;
-}
-async function sync(){
-  if(!cfg||syncing) return;
-  if(!navigator.onLine){setPill('off');return}
-  syncing=true; setPill('sync');
+  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),25000); let txt;
   try{
-    while(delQ.length){const r=await api({action:'delete',id:delQ[0]}); if(!r.ok) throw new Error(r.error==='clave'?'Clave incorrecta':r.error); delQ.shift(); persist()}
-    if(queue.length){const batch=queue.slice(); const r=await api({action:'add',items:batch}); if(!r.ok) throw new Error(r.error==='clave'?'Clave incorrecta':r.error); queue=queue.filter(x=>!batch.some(b=>b.id===x.id)); persist()}
-    const d=await api({action:'data'}); if(!d.ok) throw new Error(d.error==='clave'?'Clave incorrecta':d.error);
-    db={movimientos:d.movimientos||[],categorias:d.categorias||[],personas:d.personas||[],deuda:d.deuda||[]};
-    for(const q of queue) db.movimientos.push(q);
-    idx=null; persist(); setPill('ok'); renderAll();
-  }catch(e){
-    const m=String(e.message||e); setPill(m==='Clave incorrecta'?'err':(navigator.onLine?'err':'off'), m==='Clave incorrecta'?m:(m.includes('fetch')||m.includes('Load failed')||m.includes('NetworkError')?'No se pudo conectar':'Error: '+m.slice(0,40)));
-  }finally{syncing=false; renderPill()}
+    const r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({key:cfg.key,...body}),signal:ctl.signal});
+    txt=await r.text();
+  }catch{ throw syncErr('red') } finally{ clearTimeout(t) }
+  let j; try{ j=JSON.parse(txt) }catch{ throw syncErr('formato') }
+  if(!j||typeof j!=='object') throw syncErr('formato');
+  if(!j.ok) throw syncErr([...STOP_CODES,'datos'].includes(j.error)?j.error:'servidor');
+  return j;
+}
+const RETRY=[2000,5000,15000,45000];   // espera antes de cada reintento automático (5 intentos en total)
+let syncing=false, again=false, attempt=0, retryT=null, halt=null, lastSync=LS.get('lastsync',0), rejected=LS.get('rejected',[]), syncState={k:'idle'};
+const STOP_MSG={clave:'La clave no es correcta',bloqueado:'Demasiados intentos, espera unos 15 minutos',config:'Falta configurar el script'};
+function setPill(k,code){syncState={k,code};renderPill()}
+function ago(t){
+  if(!t) return 'aún sin sincronizar';
+  const m=Math.max(0,Math.floor((Date.now()-t)/60000));
+  if(m<1) return 'hace un momento'; if(m<60) return `hace ${m} min`;
+  const h=Math.floor(m/60); return h<24?`hace ${h} h`:`hace ${Math.floor(h/24)} d`;
+}
+function renderPill(){
+  const b=$('#sync'), n=queue.length+delQ.length, k=syncState.k, off=!navigator.onLine||k==='off', nr=rejected.length;
+  let label, cls='', note=`Última sincronización: ${ago(lastSync)}`;
+  if(!cfg){label='Sin configurar'; cls='wait'; note='Toca para conectar'}
+  else {
+    if(k==='sync'){label='Sincronizando…'; cls='wait'}
+    else if(off){label='Sin conexión'; cls='off'; if(n) note=`${n} en cola · última: ${ago(lastSync)}`}
+    else if(n){label=`Pendiente (${n})`; cls='wait'}
+    else if(k==='retry'||k==='fail'||k==='stop') label='Sin sincronizar';
+    else label='Sincronizado';
+    if(k==='retry'&&!off){note='No se pudo sincronizar, reintentando…'; cls='wait'}
+    else if(k==='fail'&&!off){note='No se pudo sincronizar. Toca para reintentar.'; cls='err'}
+    else if(k==='stop'){note=STOP_MSG[syncState.code]||'No se pudo sincronizar'; cls='err'}
+    else if(nr&&k!=='sync'){note=`${nr} movimiento${nr>1?'s':''} no válido${nr>1?'s':''}. Toca para revisar.`; cls='err'}
+  }
+  b.className='syncbtn '+cls+(k==='sync'?' spin':'');
+  $('#syncL').textContent=label; $('#syncN').textContent=note;
+  b.setAttribute('aria-label',`Sincronizar ahora. ${label}. ${note}`);
+}
+function showRejected(){
+  openSheet(`<h2>Movimientos no válidos</h2><p>No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.</p>${rejected.map(m=>`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}</p>`).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
+  $('#sNo').onclick=()=>{closeSheet();sync(true)};
+  $('#sDel').onclick=()=>{rejected=[];LS.set('rejected',rejected);closeSheet();sync(true)};
+}
+// Disparador nuevo (abrir, guardar, volver la conexión, volver a la app, tocar el botón): empieza la cuenta de reintentos de cero.
+function sync(force){ clearTimeout(retryT); retryT=null; attempt=0; return run(force) }
+async function run(force){
+  if(!cfg) return;
+  if(syncing){again=true;return}   // solo una a la vez; lo que llegue mientras tanto se envía justo al terminar
+  if(halt&&!force){ if(halt.code==='bloqueado'&&Date.now()>halt.until) halt=null; else return }   // no insistir con una clave mala
+  if(!navigator.onLine&&!force){setPill('off');return}
+  syncing=true; again=false; setPill('sync');
+  let ok=false, code='red', apartados=0;
+  // Un envío aceptado: si se deshizo mientras viajaba, ya está en el Sheet y se manda a borrar.
+  const enviado=items=>{
+    for(const b of items) if(!queue.some(x=>x.id===b.id)) delQ.push(b.id);
+    queue=queue.filter(x=>!items.some(b=>b.id===x.id)); persist();
+  };
+  try{
+    while(delQ.length){ const id=delQ[0]; await api({action:'delete',id}); delQ=delQ.filter(x=>x!==id); persist() }   // ok aunque la fila ya no exista
+    if(queue.length){
+      const batch=queue.slice();
+      try{ await api({action:'add',items:batch}); enviado(batch) }
+      catch(e){
+        if(e.code!=='datos') throw e;
+        // Hay un movimiento inválido en el lote: se prueban de uno en uno (el mismo id no se duplica) y solo se aparta el malo.
+        for(const it of batch){
+          try{ await api({action:'add',items:[it]}); enviado([it]) }
+          catch(e2){
+            if(e2.code!=='datos') throw e2;
+            if(queue.some(x=>x.id===it.id)){ queue=queue.filter(x=>x.id!==it.id); rejected.push(it); LS.set('rejected',rejected); persist(); apartados++ }
+          }
+        }
+      }
+    }
+    const d=await api({action:'data'}), dels=new Set(delQ.map(String));
+    db={movimientos:(d.movimientos||[]).filter(m=>!dels.has(String(m.id))),categorias:d.categorias||[],personas:d.personas||[],deuda:d.deuda||[]};
+    for(const q of queue) if(!db.movimientos.some(m=>m.id===q.id)) db.movimientos.push(q);
+    idx=null; persist(); ok=true;
+  }catch(e){ code=(e&&e.code)||'red' }
+  finally{ syncing=false }
+  if(ok){ attempt=0; halt=null; lastSync=Date.now(); LS.set('lastsync',lastSync); setPill('ok'); renderAll();
+    if(apartados) toast(`${apartados>1?apartados+' movimientos no se han':'Un movimiento no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`) }
+  else if(STOP_CODES.includes(code)){ halt={code,until:Date.now()+15*60000}; setPill('stop',code) }
+  else if(!navigator.onLine) setPill('off');
+  else if(attempt<RETRY.length){ setPill('retry'); retryT=setTimeout(()=>{retryT=null;attempt++;run()},RETRY[attempt]) }
+  else setPill('fail');
+  if(again){again=false; if(queue.length||delQ.length) sync()}   // se guardó algo mientras sincronizaba
 }
 
 /* ---------- datos derivados ---------- */
@@ -426,10 +495,10 @@ function openSettings(first){
     if(!key){er.textContent='Escribe la clave.';er.hidden=false;return}
     $('#sOk').disabled=true; $('#sOk').textContent='Conectando…';
     const old=cfg; cfg={url,key};
-    try{const r=await api({action:'ping'}); if(!r.ok) throw new Error(r.error==='clave'?'clave':r.error);
-      LS.set('cfg',cfg); closeSheet(); await sync(); renderAll(); toast('Conectado')}
+    try{await api({action:'ping'});
+      LS.set('cfg',cfg); halt=null; closeSheet(); await sync(); renderAll(); toast('Conectado')}
     catch(e){cfg=old; $('#sOk').disabled=false; $('#sOk').textContent='Conectar';
-      er.textContent=String(e.message)==='clave'?'La clave no coincide con la del código de Apps Script.':'No se pudo conectar. Revisa la URL y que el acceso de la implementación sea «Cualquier usuario».'; er.hidden=false}
+      er.textContent=e.code==='clave'?'La clave no coincide con la del código de Apps Script.':e.code==='bloqueado'?'Demasiados intentos, espera unos 15 minutos.':e.code==='config'?'Falta configurar el script.':'No se pudo conectar. Revisa la URL y que el acceso de la implementación sea «Cualquier usuario».'; er.hidden=false}
   };
 }
 function openSheet(html){ $('#sheet').innerHTML=html; $('#scrim').classList.add('on') }
@@ -447,9 +516,10 @@ function tab(t){
 }
 function renderAll(){ renderAdd(); const t=LS.get('tab','add'); if(t==='sum') renderSum(); if(t==='his') renderHis(); renderPill() }
 $$('.tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
-$('#sync').onclick=()=>{cfg?sync():openSettings(true)};
-window.addEventListener('online',sync); window.addEventListener('offline',()=>{setPill('off')});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden) sync()});
+$('#sync').onclick=()=>{if(!cfg) openSettings(true); else if(rejected.length) showRejected(); else if(!syncing) sync(true)};
+window.addEventListener('online',()=>sync()); window.addEventListener('offline',()=>{setPill('off')});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){ sync(); renderPill() }});
+setInterval(renderPill,30000);
 
 /* ---------- arranque ---------- */
 (function boot(){
