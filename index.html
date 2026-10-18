@@ -35,6 +35,8 @@ button{border:0;background:none;cursor:pointer;padding:0}
 #app{display:flex;flex-direction:column;height:100dvh;max-width:560px;margin:0 auto;position:relative}
 header{display:flex;align-items:center;justify-content:space-between;padding:calc(var(--sat) + 10px) 18px 6px}
 header h1{font:700 22px/1.1 var(--num);margin:0;letter-spacing:-.01em}
+#upd{margin:2px 18px 6px;min-height:40px;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-size:14.5px}
+#upd[hidden]{display:none}
 .pill{font-size:12.5px;color:var(--muted);background:var(--chip);border-radius:99px;padding:5px 11px;display:flex;align-items:center;gap:6px;min-height:28px}
 .pill i{width:7px;height:7px;border-radius:50%;background:var(--good);display:block}
 .pill.err i{background:var(--bad)} .pill.off i{background:var(--muted)} .pill.wait i{background:var(--accent)}
@@ -65,6 +67,12 @@ main{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;p
 .desc:focus{border-color:var(--ink);outline:none}
 .meta{display:flex;gap:8px;margin-top:12px;align-items:center}
 .meta .seg{flex:1}
+.meta .seg{min-width:0}
+.meta .seg button{padding:0 4px;font-size:14px;min-width:0}
+.meta .chip{padding:0 11px;flex:none}
+.dateBtn{position:relative;display:flex;align-items:center;gap:6px;border-color:var(--ink)}
+.dateBtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.dateBtn input{position:absolute;inset:0;opacity:0;width:100%;height:100%}
 .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
 .pad button{height:50px;border-radius:14px;background:var(--surface);font:600 24px var(--num);box-shadow:0 1px 0 var(--line)}
 .pad button:active{background:var(--chip)}
@@ -128,6 +136,7 @@ svg text{font-family:var(--sans)}
 <body>
 <div id="app" class="">
   <header><h1 id="title">Registrar</h1><button class="pill wait" id="sync" aria-label="Estado de sincronización"><i></i><span>Sin configurar</span></button></header>
+  <button id="upd" hidden>Hay una versión nueva · <b>Actualizar</b></button>
   <main id="main">
     <section class="view on" id="v-add" aria-label="Registrar movimiento">
       <div class="seg" id="tipoSeg" role="group" aria-label="Tipo"><button data-v="Gasto" class="on">Gasto</button><button data-v="Ingreso">Ingreso</button></div>
@@ -137,7 +146,7 @@ svg text{font-family:var(--sans)}
       <div class="chips" id="cats"></div>
       <div class="lbl">Con quién <span>(opcional)</span></div>
       <div class="chips" id="people"></div>
-      <div class="meta"><div class="seg" id="ambSeg" role="group" aria-label="Ámbito"></div><button class="chip" id="dateBtn" style="position:relative">Hoy<input type="date" id="dateIn" style="position:absolute;inset:0;opacity:0;width:100%;height:100%" aria-label="Fecha"></button></div>
+      <div class="meta"><div class="seg" id="ambSeg" role="group" aria-label="Ámbito"></div><button class="chip dateBtn" id="dateBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M8 3v4M16 3v4"/></svg><span id="dateTxt">Hoy</span><input type="date" id="dateIn" aria-label="Cambiar fecha"></button><button class="chip" id="yBtn" aria-pressed="false">Ayer</button></div>
       <div class="pad" id="pad"></div>
       <button class="primary" id="save" disabled>Guardar</button>
     </section>
@@ -162,6 +171,7 @@ const eur=(n,d=2)=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR
 const eur0=n=>eur(n,0);
 const pad2=n=>String(n).padStart(2,'0');
 const todayStr=()=>{const d=new Date();return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`};
+const yesterdayStr=()=>{const d=new Date();d.setDate(d.getDate()-1);return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`};
 const uid=()=>(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2,10));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
@@ -264,7 +274,8 @@ function renderAdd(){
   const names=[...new Set([...db.personas.map(p=>p.nombre),...st.extraPeople,...st.people])];
   names.sort((a,b)=>(pf[b]||0)-(pf[a]||0));
   $('#people').innerHTML=names.slice(0,14).map(n=>`<button class="chip ${st.people.has(n)?'on':''}" data-p="${esc(n)}" aria-pressed="${st.people.has(n)}">${esc(n)}</button>`).join('')+`<button class="chip ghost" id="newP">+ Nueva</button>`;
-  $('#dateBtn').firstChild.textContent=st.fecha===todayStr()?'Hoy':(()=>{const [y,m,d]=st.fecha.split('-');return `${+d} ${MESC[m-1]}`})();
+  $('#dateTxt').textContent=st.fecha===todayStr()?'Hoy':st.fecha===yesterdayStr()?'Ayer':(()=>{const [y,m,d]=st.fecha.split('-');return `${+d} ${MESC[m-1]}`})();
+  const yOn=st.fecha===yesterdayStr(); $('#yBtn').classList.toggle('on',yOn); $('#yBtn').setAttribute('aria-pressed',yOn);
   $('#dateIn').value=st.fecha;
   if($('#v-add').classList.contains('on')) $('#title').textContent=st.editId?'Editar movimiento':'Registrar';
   renderAmount();
@@ -297,6 +308,7 @@ function initAdd(){
     if(b.id==='newP'){const n=await askText('Nueva persona','Nombre','Ej: Laura'); if(n){const nm=n[0].toUpperCase()+n.slice(1); st.extraPeople.push(nm); st.people.add(nm); renderAdd()} return}
     const n=b.dataset.p; if(st.people.has(n)){st.people.delete(n);st.dismissed.add(n)} else {st.people.add(n);st.dismissed.delete(n)} renderAdd()};
   $('#dateIn').onchange=e=>{if(e.target.value){st.fecha=e.target.value;renderAdd()}};
+  $('#yBtn').onclick=()=>{st.fecha=st.fecha===yesterdayStr()?todayStr():yesterdayStr();renderAdd()};
   const d=$('#desc'); d.oninput=onDesc;
   d.onfocus=()=>$('#v-add').classList.add('typing'); d.onblur=()=>$('#v-add').classList.remove('typing');
   d.onkeydown=e=>{if(e.key==='Enter') d.blur()};
@@ -444,7 +456,15 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden) sync()});
   if(h.get('u')&&h.get('k')){cfg={url:h.get('u'),key:h.get('k')};LS.set('cfg',cfg);history.replaceState(null,'',location.pathname)}
   initAdd(); renderAdd(); tab('add'); renderPill();
   if(cfg){ sync() } else { openSettings(true) }
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if('serviceWorker' in navigator){
+    // Si ya había una versión controlando la app y llega otra nueva, avisa (sin recargar solo, por si estás escribiendo).
+    const hadSW=!!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(hadSW) $('#upd').hidden=false });
+    $('#upd').onclick=()=>location.reload();
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden) reg.update().catch(()=>{})});
+    }).catch(()=>{});
+  }
 })();
 </script>
 </body>
