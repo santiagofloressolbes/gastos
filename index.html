@@ -250,7 +250,18 @@ svg g[data-ym]{outline:none} svg g[data-ym]:focus-visible rect{stroke:var(--focu
 .delp svg{width:1.25rem;height:1.25rem;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 #verPagos{margin-top:.5rem}
 #sheet .aviso{font-size:.875rem;color:var(--cink);background:var(--inp);border-radius:.75rem;padding:.5rem .75rem;margin-top:.5rem}
+#sheet #smr{position:sticky;top:0;z-index:2;margin:.25rem 0 0;box-shadow:0 6px 8px -6px rgba(0,0,0,.25)}   /* los resultados se quedan a la vista aunque se desplace la hoja o haya teclado */
 #sheet .cnt{font-size:.8125rem;color:var(--cmuted);text-align:right;margin-top:.25rem}
+/* margen */
+.mrow{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.125rem .75rem;padding:.75rem 0;border-top:1px solid var(--line)}
+.mrows>.mrow:first-child{border-top:0}
+.ml{font-size:.9375rem;color:var(--cink);min-width:0;overflow-wrap:anywhere}
+.mv{font:700 1.125rem/1.25 var(--sans);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere;max-width:100%}
+.mv.neg{color:var(--cbad)}
+.ms{flex:1 0 100%;font-size:.8125rem;color:var(--cmuted)}
+.mbtn{min-height:2.75rem;padding:0 1rem;border-radius:1rem;font-size:.9375rem;margin-top:.5rem;max-width:100%}
+.mrow .mbtn{flex:1 0 100%}
+#btnSim{margin-top:1rem;width:100%}
 /* cambio de tema suave */
 body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc,.primary,.secondary,.mov,.bk,.bk button,#dock,#sheet,.amount .cur{transition:background-color .35s,color .35s,border-color .35s}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important} .syncbtn.spin svg{animation:none}}
@@ -345,6 +356,7 @@ function initCopia(){
   $('#bkOk').onclick=()=>{LS.set('bk',todayStr()); LS.set('bksnz',null); renderCopia(); say('Copia anotada. Aviso oculto.'); dejar()};
   $('#bkLater').onclick=()=>{LS.set('bksnz',todayStr()); renderCopia(); say('Aviso oculto hasta mañana.'); dejar()};
 }
+const ahorroRowHtml=()=>{if(!ahorroOk()) return ''; const a=ahorroActual(ahorros(),todayStr()); return `<div class="bkrow"><span>${a?'Ahorro actual: '+esc(eur0(a.monto))+' ('+esc(fechaCorta(a.fecha))+')':'Ahorro: sin registrar'}</span><button class="chip" id="sAh" type="button">Actualizar ahorro</button></div>`};
 const bkRowHtml=()=>{const hoy=ultimaCopia()===todayStr(); return `<div class="bkrow"><span id="bkLine">Última copia del Sheet: ${fechaLarga(ultimaCopia())}</span><button class="chip" id="sBk"${hoy?' disabled':''}>${hoy?'Hecha hoy':'Ya la hice hoy'}</button></div>`};
 
 const DEFAULT_CATS=[
@@ -359,7 +371,11 @@ let cfg=LS.get('cfg',null);
 let db=LS.get('db',{movimientos:[],categorias:[],personas:[],deuda:[]});
 let queue=LS.get('queue',[]), delQ=LS.get('delq',[]);
 let dq=LS.get('dq',[]), ddq=LS.get('ddq',[]);   // pagos de la deuda por enviar / por borrar (cola aparte de los movimientos)
-const persist=()=>{LS.set('db',db);LS.set('queue',queue);LS.set('delq',delQ);LS.set('dq',dq);LS.set('ddq',ddq)};
+let aq=LS.get('aq',[]), adq=LS.get('adq',[]);   // fotos del ahorro por enviar / por borrar (otra cola aparte)
+if(!db||typeof db!=='object') db={movimientos:[],categorias:[],personas:[],deuda:[]};
+if(!Array.isArray(db.ahorro)) db.ahorro=[];     // copias locales anteriores no traen la lista
+const ahorros=()=>Array.isArray(db.ahorro)?db.ahorro:[];
+const persist=()=>{LS.set('db',db);LS.set('queue',queue);LS.set('delq',delQ);LS.set('dq',dq);LS.set('ddq',ddq);LS.set('aq',aq);LS.set('adq',adq)};
 
 /* ---------- red ---------- */
 // Cualquier fallo se reduce a un código interno; el texto crudo del error nunca llega a la pantalla.
@@ -396,9 +412,10 @@ function ago(t){
   if(m<1) return 'hace un momento'; if(m<60) return `hace ${m} min`;
   const h=Math.floor(m/60); return h<24?`hace ${h} h`:`hace ${Math.floor(h/24)} d`;
 }
+const aBloq=()=>ahorroOk()?0:aq.length+adq.length;   // fotos de ahorro que esperan a que el script las admita
 const dBloq=()=>dq.filter(x=>!(deudaOk()&&enviableD(x))).length+(deudaOk()?0:ddq.length);   // registros de deuda que esperan a que el script los admita
 function renderPill(){
-  const b=$('#sync'), n=queue.length+delQ.length+dq.length+ddq.length, k=syncState.k, off=!navigator.onLine||k==='off', nr=rejected.length;
+  const b=$('#sync'), n=queue.length+delQ.length+dq.length+ddq.length+aq.length+adq.length, k=syncState.k, off=!navigator.onLine||k==='off', nr=rejected.length;
   let label, cls='', note=`Última vez: ${ago(lastSync)}`, full='';
   if(!cfg){label='Sin configurar'; cls='wait'; note='Toca para conectar'}
   else {
@@ -410,8 +427,9 @@ function renderPill(){
     if(k==='retry'&&!off){note='Reintentando…'; full='No se pudo sincronizar, reintentando…'; cls='wait'}
     else if(k==='fail'&&!off){note='Toca para reintentar'; full='No se pudo sincronizar. Toca para reintentar.'; cls='err'}
     else if(k==='stop'){note=STOP_SHORT[syncState.code]||'No se pudo sincronizar'; full=STOP_MSG[syncState.code]||note; cls='err'}
-    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=rejected.every(r=>r.motivo==='reembolso')?`${nr} reembolso${pl} sin guardar`:rejected.every(r=>r.motivo==='deuda')?`${nr} registro${pl} de deuda no válido${pl}`:`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
+    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=rejected.every(r=>r.motivo==='reembolso')?`${nr} reembolso${pl} sin guardar`:rejected.every(r=>r.motivo==='deuda')?`${nr} registro${pl} de deuda no válido${pl}`:rejected.every(r=>r.motivo==='ahorro')?`${nr} registro${pl} de ahorro no válido${pl}`:`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
     else if(k==='ok'&&dBloq()>0){const pn=dBloq(); note=`${pn} registro${pn>1?'s':''} de deuda sin enviar`; full=note+': el script no los admite todavía. Actualízalo.'; cls='err'}
+    else if(k==='ok'&&aBloq()>0){const pn=aBloq(); note=`${pn} registro${pn>1?'s':''} de ahorro sin enviar`; full=note+': el script no los admite todavía. Actualízalo.'; cls='err'}
   }
   // Compacto (solo icono y puntito) 3 s después de quedar todo sincronizado; se expande en cuanto hay algo que decir.
   const calm=!!cfg&&k==='ok'&&!n&&!nr&&!off;
@@ -426,12 +444,13 @@ function renderPill(){
 }
 const reembOk=()=>!!caps&&caps.reembolso===true;   // el script avisa de que entiende el campo "reembolso"
 const deudaOk=()=>!!caps&&caps.deuda===true;       // el script avisa de que sabe escribir pagos de la deuda
+const ahorroOk=()=>!!caps&&caps.ahorro===true;     // el script avisa de que sabe guardar el ahorro
 const recibidoOk=()=>deudaOk()&&caps.recibidos===true;   // ...y también ayudas recibidas
 const enviableD=x=>/^pagado$/i.test(String(x.tipo||'').trim())||recibidoOk();   // un pago sale con deudaEscritura; una ayuda, solo si el script la admite
 function showRejected(){
-  const solo=rejected.length>0&&rejected.every(m=>m.motivo==='reembolso'), pagos=rejected.length>0&&rejected.every(m=>m.motivo==='deuda');
-  const fila=m=>m.motivo==='deuda'?`<p><b>${/^pagado$/i.test(String(m.tipo||'').trim())?'Pago':'Ayuda'} de ${esc(m.monto_eur)} €</b><br>${esc(m.fecha)}${m.nota?' · '+esc(m.nota):''}</p>`:`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}${m.motivo==='reembolso'?' · '+esc(m.reembolso):''}</p>`;
-  openSheet(`<h2>${solo?'Reembolsos sin guardar':pagos?'Registros de deuda no válidos':'Movimientos no válidos'}</h2><p>${solo?'El script no guardó la marca de reembolso de estos movimientos: están en la hoja, pero sin marca. Actualiza el script y vuelve a marcarlos desde Editar.':'No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.'}</p>${rejected.map(fila).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
+  const solo=rejected.length>0&&rejected.every(m=>m.motivo==='reembolso'), pagos=rejected.length>0&&rejected.every(m=>m.motivo==='deuda'), ahor=rejected.length>0&&rejected.every(m=>m.motivo==='ahorro');
+  const fila=m=>m.motivo==='ahorro'?`<p><b>Ahorro de ${esc(m.monto_eur)} €</b><br>${esc(m.fecha)}${m.nota?' · '+esc(m.nota):''}</p>`:m.motivo==='deuda'?`<p><b>${/^pagado$/i.test(String(m.tipo||'').trim())?'Pago':'Ayuda'} de ${esc(m.monto_eur)} €</b><br>${esc(m.fecha)}${m.nota?' · '+esc(m.nota):''}</p>`:`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}${m.motivo==='reembolso'?' · '+esc(m.reembolso):''}</p>`;
+  openSheet(`<h2>${solo?'Reembolsos sin guardar':pagos?'Registros de deuda no válidos':ahor?'Registros de ahorro no válidos':'Movimientos no válidos'}</h2><p>${solo?'El script no guardó la marca de reembolso de estos movimientos: están en la hoja, pero sin marca. Actualiza el script y vuelve a marcarlos desde Editar.':'No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.'}</p>${rejected.map(fila).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
   $('#sNo').onclick=()=>{closeSheet();sync(true)};
   $('#sDel').onclick=()=>{rejected=[];LS.set('rejected',rejected);closeSheet();sync(true)};
 }
@@ -443,7 +462,7 @@ async function run(force){
   if(halt&&!force){ if(halt.code==='bloqueado'&&Date.now()>halt.until) halt=null; else return }   // no insistir con una clave mala
   if(!navigator.onLine&&!force){setPill('off');return}
   syncing=true; again=false; setPill('sync');
-  let ok=false, code='red', apartados=0, apartadosD=0, malTag=0, dSaltado=false; const tagged=[];
+  let ok=false, code='red', apartados=0, apartadosD=0, apartadosA=0, malTag=0, dSaltado=false, aSaltado=false; const tagged=[];
   // Un envío aceptado: si se deshizo mientras viajaba, ya está en el Sheet y se manda a borrar.
   const enviado=items=>{
     for(const b of items) if(!queue.some(x=>x.id===b.id)) delQ.push(b.id);
@@ -454,6 +473,11 @@ async function run(force){
   const enviadoD=items=>{
     for(const b of items) if(!dq.some(x=>x.id===b.id)) ddq.push(b.id);
     dq=dq.filter(x=>!items.some(b=>b.id===x.id)); persist();
+  };
+  // Fotos del ahorro: igual que arriba (si se borró mientras viajaba, ya está en el Sheet y se manda a borrar).
+  const enviadoA=items=>{
+    for(const b of items) if(!aq.some(x=>x.id===b.id)) adq.push(b.id);
+    aq=aq.filter(x=>!items.some(b=>b.id===x.id)); persist();
   };
   try{
     while(delQ.length){ const id=delQ[0]; await api({action:'delete',id}); delQ=delQ.filter(x=>x!==id); persist() }   // ok aunque la fila ya no exista
@@ -489,12 +513,32 @@ async function run(force){
         }
       }
     }
-    dSaltado=dBloq()>0;   // script antiguo (o aún sin saber): no se envía nada de eso, la cola espera
-    const d=await api({action:'data'}), dels=new Set(delQ.map(String)), ddels=new Set(ddq.map(String));
-    db={movimientos:(d.movimientos||[]).filter(m=>!dels.has(String(m.id))),categorias:d.categorias||[],personas:d.personas||[],deuda:(d.deuda||[]).filter(x=>!ddels.has(String(x.id)))};
+    if(ahorroOk()){
+      while(adq.length){ const id=adq[0]; await api({action:'savingsDelete',id}); adq=adq.filter(x=>x!==id); persist() }   // ok aunque la fila ya no exista
+      for(;;){
+        const batch=aq.slice(0,200); if(!batch.length) break;
+        try{ await api({action:'savingsAdd',items:batch}); enviadoA(batch) }
+        catch(e){
+          if(e.code!=='datos') throw e;
+          for(const it of batch){   // una foto inválida en el lote: de una en una (el mismo id no se duplica) y solo se aparta la mala
+            try{ await api({action:'savingsAdd',items:[it]}); enviadoA([it]) }
+            catch(e2){
+              if(e2.code!=='datos') throw e2;
+              if(aq.some(x=>x.id===it.id)){ aq=aq.filter(x=>x.id!==it.id); rejected.push({...it,motivo:'ahorro'}); LS.set('rejected',rejected); persist(); apartadosA++ }
+            }
+          }
+        }
+      }
+    }
+    dSaltado=dBloq()>0; aSaltado=aBloq()>0;   // script antiguo (o aún sin saber): no se envía nada de eso, la cola espera
+    const d=await api({action:'data'}), dels=new Set(delQ.map(String)), ddels=new Set(ddq.map(String)), adels=new Set(adq.map(String));
+    db={movimientos:(d.movimientos||[]).filter(m=>!dels.has(String(m.id))),categorias:d.categorias||[],personas:d.personas||[],deuda:(d.deuda||[]).filter(x=>!ddels.has(String(x.id))),ahorro:(Array.isArray(d.ahorro)?d.ahorro:[]).filter(x=>!adels.has(String(x.id)))};
     for(const q of queue) if(!db.movimientos.some(m=>m.id===q.id)) db.movimientos.push(q);
     for(const q of dq) if(!db.deuda.some(x=>String(x.id)===q.id)) db.deuda.push(q);
-    caps={reembolso:d.reembolso===true,deuda:d.deudaEscritura===true,recibidos:d.deudaRecibidos===true}; if(dSaltado&&dq.some(x=>deudaOk()&&enviableD(x))) again=true;   // el script ya los admite: se envían en la pasada siguiente LS.set('caps',caps);   // sin el flag la fila de reembolso se oculta y no se envía nada
+    for(const q of aq) if(!db.ahorro.some(x=>String(x.id)===q.id)) db.ahorro.push(q);
+    caps={reembolso:d.reembolso===true,deuda:d.deudaEscritura===true,recibidos:d.deudaRecibidos===true,ahorro:d.ahorroEscritura===true}; LS.set('caps',caps);   // sin el flag la fila de reembolso, los pagos y el ahorro se ocultan y no se envía nada
+    if(dSaltado&&dq.some(x=>deudaOk()&&enviableD(x))) again=true;   // el script ya los admite: se envían en la pasada siguiente
+    if(aSaltado&&ahorroOk()) again=true;
     // Comprobación acotada (no lanza ni frena nada): si un movimiento enviado con marca vuelve sin ella, el script no la guardó.
     if(tagged.length){ try{
       const por=new Map((d.movimientos||[]).map(m=>[String(m.id),m]));
@@ -507,12 +551,13 @@ async function run(force){
   if(ok){ attempt=0; halt=null; lastSync=Date.now(); LS.set('lastsync',lastSync); setPill('ok'); renderAll();
     if(malTag) toast(`El script no guardó el reembolso de ${malTag>1?malTag+' movimientos':'un movimiento'}. Toca el indicador para verlo.`);
     if(apartados) toast(`${apartados>1?apartados+' movimientos no se han':'Un movimiento no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`);
+    if(apartadosA) toast(`${apartadosA>1?apartadosA+' registros de ahorro no se han':'Un registro de ahorro no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`);
     if(apartadosD) toast(`${apartadosD>1?apartadosD+' registros de deuda no se han':'Un registro de deuda no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`) }
   else if(STOP_CODES.includes(code)){ halt={code,until:Date.now()+15*60000}; setPill('stop',code) }
   else if(!navigator.onLine) setPill('off');
   else if(attempt<RETRY.length){ setPill('retry'); retryT=setTimeout(()=>{retryT=null;attempt++;run()},RETRY[attempt]) }
   else setPill('fail');
-  if(again){again=false; if(queue.length||delQ.length||dq.length||ddq.length) sync()}   // se guardó algo mientras sincronizaba
+  if(again){again=false; if(queue.length||delQ.length||dq.length||ddq.length||aq.length||adq.length) sync()}   // se guardó algo mientras sincronizaba
 }
 
 /* ---------- datos derivados ---------- */
@@ -711,7 +756,7 @@ function resumenCalc(movs,o){
 }
 
 /* Secciones que se abren y cierran: se recuerda solo si están abiertas o cerradas (clave "sec") */
-const SEC_DEF={cat:true,tend:false,quien:false,deuda:false};
+const SEC_DEF={cat:true,margen:false,tend:false,quien:false,deuda:false};
 const secOpen=(()=>{const s=LS.get('sec',{})||{}, o={...SEC_DEF}; for(const k in SEC_DEF) if(typeof s[k]==='boolean') o[k]=s[k]; return o})();
 const CHEV='<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 const secHtml=(id,title,summary,body,foot='')=>`<section class="card sec" data-sec="${id}" data-open="${secOpen[id]}"><h2 class="sh"><button type="button" id="sb-${id}" aria-expanded="${secOpen[id]}" aria-controls="sp-${id}"><span><span class="stt">${esc(title)}</span><span class="ssum">${esc(summary)}</span></span>${CHEV}</button></h2><div class="spw"><div class="sp" id="sp-${id}" role="region" aria-labelledby="sb-${id}"><div class="sp-in">${body}</div></div></div>${foot}</section>`;
@@ -726,14 +771,74 @@ function deudaCalc(rows){
   const todos=rows.slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));   // pagos y ayudas, lo más reciente primero
   return {recibido,pagado,saldo:r2(recibido-pagado),ultima,pagos,todos};
 }
+/* ---------- margen: indicadores de «Tu margen» (cálculo aparte de la pantalla, para poder comprobarlo) ---------- */
+// Categorías que cuentan como gasto fijo (se comparan sin mayúsculas ni acentos). Se editan aquí.
+const FIJAS=['Renta','Teléfono/Internet','Suscripciones','Cuota autónomo','Gestoría'].map(norm);
+const esFija=c=>FIJAS.includes(norm(c));
+const reembolsable=m=>m.ambito==='LaLiga'&&(m.reembolso==='A reembolsar'||m.reembolso==='Reembolsado');   // el dinero vuelve: no es gasto del margen
+const MIN_GASTOS=5, MIN_DIAS=3, VENTANA=6, MIN_TIPICO=3, MIN_BALANCE=2, AHORRO_VIEJO=60;
+const mediana=a=>{const s=a.slice().sort((x,y)=>x-y), n=s.length; return r2(n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2)};
+const diasEntre=(a,b)=>Math.round((Date.UTC(+b.slice(0,4),+b.slice(5,7)-1,+b.slice(8,10))-Date.UTC(+a.slice(0,4),+a.slice(5,7)-1,+a.slice(8,10)))/864e5);
+function ahorroActual(rows,hoy){   // la foto más reciente que no sea futura; a igual fecha, la última añadida
+  let best=null;
+  for(const a of rows||[]){
+    const f=String(a.fecha||'').slice(0,10); if(!fechaOk(f)||f>hoy||a.monto_eur===''||a.monto_eur==null) continue;
+    const mo=Number(a.monto_eur); if(!isFinite(mo)||mo<0) continue;
+    if(!best||f>=best.fecha) best={id:String(a.id||''),fecha:f,monto:mo,nota:a.nota||''};
+  }
+  return best;
+}
+function margenCalc(movs,ahorroRows,hoy){
+  const cur=hoy.slice(0,7), por={};
+  for(const m of movs||[]){
+    const ym=String(m.fecha||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(ym)||ym>=cur) continue;   // solo meses completos ya pasados
+    const mo=Number(m.monto); if(!isFinite(mo)) continue;
+    const s=por[ym]||(por[ym]={gasto:0,fijo:0,ingreso:0,n:0,dias:new Set(),amb:{}}), a=s.amb[m.ambito]||(s.amb[m.ambito]={gasto:0,ingreso:0});
+    if(m.tipo==='Ingreso'){ s.ingreso+=mo; a.ingreso+=mo }
+    else if(m.tipo==='Gasto'&&!reembolsable(m)){ s.gasto+=mo; a.gasto+=mo; if(esFija(m.categoria)) s.fijo+=mo; s.n++; s.dias.add(String(m.fecha).slice(0,10)) }
+  }
+  const vacio={gasto:0,fijo:0,ingreso:0,n:0,dias:new Set(),amb:{}}, get=ym=>por[ym]||vacio, valido=s=>s.n>=MIN_GASTOS&&s.dias.size>=MIN_DIAS;
+  const ventana=[]; for(let k=1;k<=36&&ventana.length<VENTANA;k++){ const ym=ymAdd(cur,-k), s=get(ym); if(valido(s)) ventana.push(s) }
+  const nV=ventana.length, tipico=nV>=MIN_TIPICO?mediana(ventana.map(s=>s.gasto)):null;
+  const fijo=tipico==null?null:mediana(ventana.map(s=>s.fijo)), variable=tipico==null?null:r2(tipico-fijo);
+  const conIng=ventana.filter(s=>s.ingreso>0).length;
+  const ingresoMedio=tipico!=null&&conIng>=2?r2(ventana.reduce((a,s)=>a+s.ingreso,0)/nV):null;
+  const margen=ingresoMedio==null?null:r2(ingresoMedio-tipico);
+  const porAmbito=tipico==null?null:['Personal','Sporture','LaLiga'].map(n=>({ambito:n,
+    gasto:r2(ventana.reduce((a,s)=>a+((s.amb[n]||{}).gasto||0),0)/nV), ingreso:r2(ventana.reduce((a,s)=>a+((s.amb[n]||{}).ingreso||0),0)/nV)}));
+  const win=(a,b)=>{const o=[]; for(let k=a;k<=b;k++){const ym=ymAdd(cur,-k), s=get(ym); o.push({ym,valido:valido(s),balance:r2(s.ingreso-s.gasto)})} return o};
+  const rec=win(1,3), vr=rec.filter(x=>x.valido), va=win(4,6).filter(x=>x.valido);
+  const balance3=vr.length>=MIN_BALANCE?{total:r2(vr.reduce((a,x)=>a+x.balance,0)),n:vr.length,meses:rec}:null;
+  let tendencia=null;
+  if(vr.length>=MIN_BALANCE&&va.length>=MIN_BALANCE){
+    const dif=vr.reduce((a,x)=>a+x.balance,0)/vr.length-va.reduce((a,x)=>a+x.balance,0)/va.length, u=Math.max(50,0.1*(tipico||0));
+    tendencia=dif>u?'mejorando':dif<-u?'empeorando':'igual';
+  }
+  const A=ahorroActual(ahorroRows,hoy), colchon=A&&tipico>0?Math.round(A.monto/tipico*10)/10:null;
+  const pend=(movs||[]).filter(m=>m.tipo==='Gasto'&&m.ambito==='LaLiga'&&m.reembolso==='A reembolsar');
+  return {nV,tipico,fijo,variable,ingresoMedio,ingMin:nV?r2(Math.min(...ventana.map(s=>s.ingreso))):null,ingMax:nV?r2(Math.max(...ventana.map(s=>s.ingreso))):null,
+    margen,porAmbito,rec,balance3,tendencia,ahorro:A,colchon,diasAhorro:A?diasEntre(A.fecha,hoy):null,porCobrar:{n:pend.length,total:sumBy(pend,m=>m.monto)}};
+}
+// Simulador «¿Y si…?»: solo cuentas, no guarda nada. Los campos vacíos llegan como null.
+function simCalc({ahorro,tipico,ingreso,padres,extra,meses}){
+  const pad=padres||0, o={queda:null,colchon:null,aporte:null,quedaTrasAporte:null,tarda:null,cubre:false,colchonTras:null};
+  if(ingreso!=null) o.queda=r2(ingreso-tipico-pad);
+  if(ahorro!=null&&tipico+pad>0) o.colchon=Math.round(ahorro/(tipico+pad)*10)/10;
+  if(extra>0){
+    if(meses>0){ o.aporte=r2(extra/meses); if(o.queda!=null) o.quedaTrasAporte=r2(o.queda-o.aporte) }
+    if(o.queda!=null&&o.queda>0) o.tarda=Math.ceil(extra/o.queda-1e-9);
+    if(ahorro!=null&&ahorro>=extra){ o.cubre=true; if(tipico+pad>0) o.colchonTras=Math.round((ahorro-extra)/(tipico+pad)*10)/10 }
+  }
+  return o;
+}
 const fechaCorta=f=>{const [y,m,d]=String(f).slice(0,10).split('-'); return MESC[m-1]?`${+d} ${MESC[m-1]} ${y}`:String(f)};
-function parseMonto(txt){   // «12,5», «12.50» o «1.200,50»; devuelve un número o un texto con el motivo
+function parseMonto(txt,cero=false){   // «12,5», «12.50» o «1.200,50»; devuelve un número o un texto con el motivo
   let t=String(txt).trim().replace(/\s/g,'').replace(/€/g,''); if(!t) return 'Escribe el monto.';
   if(t.includes(',')) t=t.replace(/\./g,'').replace(',','.');
   if(!/^\d+(\.\d+)?$/.test(t)) return 'Escribe solo números, por ejemplo 150 o 150,50.';
   if(/\.\d{3,}$/.test(t)) return 'Usa como máximo 2 decimales.';
   const n=Math.round(parseFloat(t)*100)/100;
-  if(!(n>0)) return 'El monto tiene que ser mayor que 0.';
+  if(cero?!(n>=0):!(n>0)) return 'El monto tiene que ser mayor que 0.';
   if(n>1e7) return 'Ese monto es demasiado grande.';
   return n;
 }
@@ -785,6 +890,119 @@ function borrarPago(id){
   $('#sOk').onclick=()=>{$('#sOk').disabled=true; closeSheet(); removePago(id); foco('#sb-deuda'); toast('Pago borrado')};
 }
 
+/* ---------- margen: ahorro (fotos con fecha) y pantalla ---------- */
+const puedeBorrarAhorro=a=>!!a.id&&(aq.some(x=>x.id===a.id)||(ahorroOk()&&String(a.id).startsWith('a-')));   // solo fotos propias
+function addAhorro(item){ aq.push(item); db.ahorro.push(item); persist() }
+function removeAhorro(id){
+  const q=aq.findIndex(x=>x.id===id);
+  if(q>=0) aq.splice(q,1); else if(String(id).startsWith('a-')&&!adq.includes(id)) adq.push(id);   // en cola: se quita sin molestar al script; ya enviada: se manda a borrar
+  db.ahorro=db.ahorro.filter(x=>String(x.id)!==id); persist(); renderAll(); sync();
+}
+const sgn=n=>(n>0?'+':n<0?'−':'')+eur0(Math.abs(n));
+const nMeses=n=>`${n.toLocaleString('es-ES',{maximumFractionDigits:1})} ${n===1?'mes':'meses'}`;
+const mesDe=ym=>MES[+ym.slice(5)-1];
+function margenSec(M){
+  const mr=(l,v,sub=[],cls='',extra='')=>`<div class="mrow"><span class="ml">${esc(l)}</span><b class="mv${cls?' '+cls:''}">${esc(v)}</b>${sub.filter(Boolean).map(x=>`<small class="ms">${esc(x)}</small>`).join('')}${extra}</div>`;
+  const hayAh=ahorroOk(), A=M.ahorro;
+  // resumen de la sección cerrada
+  let sum;
+  if(M.margen!=null) sum=(M.margen>=0?`Margen: ${sgn(M.margen)}/mes`:`Faltan ${eur0(-M.margen)}/mes (gastas más de lo que ingresas)`)+(M.tendencia?` · ${M.tendencia}`:'');
+  else if(M.tipico!=null) sum=`Gasto típico ${eur0(M.tipico)}/mes · faltan ingresos`;
+  else sum='Faltan meses con datos';
+  const rows=[];
+  if(M.balance3){
+    const b=M.balance3, ordenados=b.meses.slice().reverse();
+    rows.push(mr('Balance de los últimos 3 meses',sgn(b.total),[b.total>0?'Ingresaste más de lo que gastaste':b.total<0?'Gastaste más de lo que ingresaste':'Ingresos y gastos quedaron igual',
+      'Tendencia: '+(M.tendencia||'sin comparación todavía'),
+      ordenados.map(x=>`${mesDe(x.ym)}: ${!x.valido?'pocos datos, no cuenta':x.balance>0?`sobraron ${eur0(x.balance)}`:x.balance<0?`faltaron ${eur0(-x.balance)}`:'quedó en 0 €'}`).join(' · ')],b.total<0?'neg':''));
+  } else rows.push(mr('Balance de los últimos 3 meses','Faltan datos',['Necesito al menos 2 de los últimos 3 meses con datos suficientes.']));
+  if(M.tipico!=null){
+    rows.push(mr('Gasto típico',`${eur0(M.tipico)}/mes`,[`Mediana de los últimos ${M.nV} meses con datos`]));
+    rows.push(mr('Fijos y variables',`${eur0(M.fijo)} fijos`,[`${eur0(M.variable)} variables · fijos: ${M.tipico>0?Math.round(M.fijo/M.tipico*100):0} % del gasto típico`,'Fijos: renta, teléfono/internet, suscripciones, cuota de autónomo y gestoría.']));
+  } else rows.push(mr('Gasto típico','Faltan datos',[`Necesito al menos 3 meses con datos suficientes (llevas ${M.nV}).`]));
+  if(M.margen!=null) rows.push(mr('Margen disponible',`${sgn(M.margen)}/mes`,[M.margen<0?'Gastas más de lo que ingresas':M.margen>0?'Te sobra cada mes':'Ingresas lo mismo que gastas',`Ingreso medio ${eur0(M.ingresoMedio)}/mes − gasto típico ${eur0(M.tipico)}/mes`,`Tus ingresos mensuales van de ${eur0(M.ingMin)} a ${eur0(M.ingMax)}`],M.margen<0?'neg':''));
+  else rows.push(mr('Margen disponible','Faltan ingresos',[M.tipico!=null?'Registra tus ingresos para calcularlo (necesito ingresos en al menos 2 de esos meses).':'Primero hacen falta meses con gastos.']));
+  if(A){
+    const viejo=M.diasAhorro>AHORRO_VIEJO;
+    rows.push(mr('Meses de colchón',M.colchon!=null?nMeses(M.colchon):'Faltan datos',[`Ahorro de ${eur0(A.monto)} (foto del ${fechaCorta(A.fecha)})`,M.colchon==null?'Necesito el gasto típico para calcularlo.':'',viejo?'Esa foto tiene más de 60 días: conviene actualizarla.':''],'',viejo&&hayAh?'<button type="button" class="secondary mbtn" id="btnAhorro">Actualizar ahorro</button>':''));
+  } else rows.push(mr('Meses de colchón','Sin ahorro registrado',['Anota tu ahorro actual para saber cuántos meses aguantarías.',hayAh?'':'Para registrarlo hace falta sincronizar con el script actualizado.'],'',hayAh?'<button type="button" class="secondary mbtn" id="btnAhorro">Registrar ahorro</button>':''));
+  if(M.porCobrar.n) rows.push(mr('Por cobrar de LaLiga',eur0(M.porCobrar.total),[`${M.porCobrar.n} gasto${M.porCobrar.n>1?'s':''} pendiente${M.porCobrar.n>1?'s':''} de reembolso · no cuenta${M.porCobrar.n>1?'n':''} en el margen`]));
+  const amb=M.porAmbito?`<h3 class="ph">Qué aporta cada ámbito</h3><div class="mrows">${M.porAmbito.map(a=>mr(a.ambito,`${eur0(a.gasto)} de gasto`,[`${eur0(a.ingreso)} de ingresos al mes (media)`])).join('')}</div>`:'';
+  const body=`<p class="sub">Personal, Sporture y LaLiga juntos · meses completos, sin contar el actual</p><div class="mrows">${rows.join('')}</div>${amb}
+    <p class="note">Este margen no incluye los reembolsos de LaLiga, por eso puede diferir del Balance de arriba.</p>
+    <button type="button" class="secondary mbtn" id="btnSim">¿Y si…?</button>`;
+  return secHtml('margen','Tu margen',sum,body);
+}
+function abrirSim(M){
+  const A=M.ahorro, ini=M.ingresoMedio!=null?String(Math.round(M.ingresoMedio)):'';
+  if(M.tipico==null){
+    openSheet(`<h2>¿Y si…?</h2><p>Todavía no puedo calcularlo: necesito al menos 3 meses con datos suficientes para saber tu gasto típico.</p><div class="btns"><button class="secondary" id="sNo">Cerrar</button></div>`);
+    $('#sNo').onclick=closeSheet; return;
+  }
+  openSheet(`<h2>¿Y si…?</h2><p>Prueba cifras para decidir. No se guarda nada. Parto de tu gasto típico: <b>${esc(eur0(M.tipico))}/mes</b>.</p>
+  <div id="smr" class="aviso" role="status" aria-live="polite"></div>
+  <label for="smi">Ingreso mensual esperado (€)</label><input id="smi" inputmode="decimal" autocomplete="off" autocapitalize="off" value="${esc(ini)}" placeholder="0">
+  <label for="smp">Pago mensual a tus padres (€)</label><input id="smp" inputmode="decimal" autocomplete="off" autocapitalize="off" placeholder="0">
+  <label for="sme">Gasto extra puntual: viaje, iPhone… (€)</label><input id="sme" inputmode="decimal" autocomplete="off" autocapitalize="off" placeholder="0">
+  <label for="smm">Meses para juntarlo</label><input id="smm" inputmode="numeric" autocomplete="off" autocapitalize="off" placeholder="Por ejemplo 6">
+  <div class="btns"><button class="secondary" id="sNo">Cerrar</button></div>`);
+  $('#sNo').onclick=closeSheet;
+  const num=id=>{const t=$('#'+id).value.trim(); if(!t) return null; const n=parseMonto(t,true); return typeof n==='number'?n:NaN};
+  const calc=()=>{
+    const ingreso=num('smi'), padres=num('smp'), extra=num('sme'), mm=num('smm'), r=$('#smr');
+    if([ingreso,padres,extra,mm].some(x=>typeof x==='number'&&!isFinite(x))||(mm!=null&&(mm<1||mm>120||!Number.isInteger(mm)))){ r.textContent='Revisa los campos: solo números, y los meses enteros entre 1 y 120.'; return }
+    const S=simCalc({ahorro:A?A.monto:null,tipico:M.tipico,ingreso,padres,extra,meses:mm}), l=[];
+    if(S.queda==null) l.push('Escribe el ingreso mensual esperado para ver lo que te queda al mes.');
+    else l.push(S.queda>=0?`Te quedaría al mes: ${eur0(S.queda)}.`:`Te faltarían ${eur0(-S.queda)} al mes: gastarías más de lo que ingresas.`);
+    if(S.colchon!=null) l.push(`Meses de colchón: ${nMeses(S.colchon)}.`); else if(!A) l.push('Sin ahorro registrado, no puedo calcular el colchón.');
+    if(extra>0){
+      if(S.cubre) l.push(`Tu ahorro ya cubre esa compra${S.colchonTras!=null?` y te quedarían ${nMeses(S.colchonTras)} de colchón`:''}.`);
+      if(S.aporte!=null) l.push(`Para juntarlo en ${mm===1?'1 mes':mm+' meses'} tendrías que apartar ${eur0(S.aporte)} al mes${S.quedaTrasAporte!=null?(S.quedaTrasAporte>=0?`; te quedarían ${eur0(S.quedaTrasAporte)} al mes.`:`; te faltarían ${eur0(-S.quedaTrasAporte)} al mes.`):'.'}`);
+      if(S.queda!=null) l.push(S.tarda!=null?`Con lo que te queda al mes, lo juntarías en ${S.tarda===1?'1 mes':S.tarda+' meses'}.`:'Con lo que te queda al mes no se puede juntar.');
+    }
+    r.textContent=l.join(' ');
+  };
+  for(const id of ['smi','smp','sme','smm']) $('#'+id).oninput=calc;
+  calc(); foco('#smi');
+}
+function abrirAhorro(){
+  if(!ahorroOk()) return;
+  const hoy=todayStr(), act=ahorroActual(ahorros(),hoy), rows=ahorros().slice().reverse().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).slice(0,5);
+  const fila=a=>{const m=eur(Number(a.monto_eur)||0), pen=aq.some(x=>x.id===a.id), es=act&&act.id===String(a.id);
+    return `<li class="pago"><div class="pg"><div class="pl"><b>${esc(m)}</b>${es?'<span class="tag tag-p">Actual</span>':''}${pen?'<span class="tag tag-r">Sin enviar</span>':''}</div><span class="pf">${esc(fechaCorta(a.fecha))}${a.nota?' · '+esc(a.nota):''}</span></div>${puedeBorrarAhorro(a)?`<button class="delp" data-id="${esc(a.id)}" aria-label="${esc('Borrar foto de '+m+' del '+fechaCorta(a.fecha))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"/></svg></button>`:''}</li>`};
+  openSheet(`<h2>Actualizar ahorro</h2><p>Anota cuánto tienes ahorrado. Se guarda una foto con su fecha y la más reciente es tu ahorro actual. No cuenta como ingreso ni gasto.</p>
+  <label for="ahm">Ahorro (€)</label><input id="ahm" inputmode="decimal" autocomplete="off" autocapitalize="off" placeholder="0,00">
+  <label for="ahd">Fecha</label><input id="ahd" type="date" value="${hoy}" max="${hoy}">
+  <label for="ahn">Nota (opcional)</label><input id="ahn" maxlength="100" autocomplete="off" autocapitalize="sentences" aria-describedby="ahc">
+  <div class="cnt" id="ahc">0 de 100</div>
+  <div id="ahe" class="err" role="alert" hidden></div>
+  <div class="btns"><button class="secondary" id="sNo">Cancelar</button><button class="primary" id="sOk">Guardar ahorro</button></div>
+  <h3 class="ph">Últimas fotos</h3>${rows.length?`<ul class="pagos">${rows.map(fila).join('')}</ul>`:'<p class="note" style="margin-top:.25rem">Todavía no hay ninguna.</p>'}`);
+  const err=m=>{const e=$('#ahe'); e.textContent=m||''; e.hidden=!m};
+  $('#sNo').onclick=closeSheet;
+  $('#ahn').oninput=()=>{$('#ahc').textContent=`${[...$('#ahn').value].length} de 100`};
+  $('#sheet').querySelectorAll('.delp').forEach(b=>b.onclick=()=>borrarAhorro(b.dataset.id));
+  $('#sOk').onclick=()=>{
+    const m=parseMonto($('#ahm').value,true); if(typeof m!=='number'){err(m); $('#ahm').focus(); return}
+    const f=$('#ahd').value; if(!fechaOk(f)){err('Elige una fecha.'); $('#ahd').focus(); return}
+    if(f>todayStr()){err('La fecha no puede ser futura.'); $('#ahd').focus(); return}
+    $('#sOk').disabled=true;   // un solo toque, un solo registro
+    const item={id:'a-'+uid(),fecha:f,monto_eur:m,nota:[...$('#ahn').value.trim()].slice(0,100).join('')};
+    addAhorro(item); closeSheet(); renderAll();
+    setTimeout(()=>toast(`Ahorro guardado · ${eur(m)}`,()=>{removeAhorro(item.id)}),400);   // un segundo toque rápido en Guardar no debe caer en «Deshacer»
+    sync();
+  };
+  foco('#ahm');
+}
+function borrarAhorro(id){
+  const a=ahorros().find(x=>String(x.id)===id); if(!a||!puedeBorrarAhorro(a)) return;
+  const act=ahorroActual(ahorros(),todayStr()), es=act&&act.id===id;
+  openSheet(`<h2>¿Borrar esta foto del ahorro?</h2><p><b>${esc(eur(Number(a.monto_eur)||0))}</b> · ${esc(fechaCorta(a.fecha))}${a.nota?'<br>'+esc(a.nota):''}</p><p>${es?'Es tu ahorro actual: pasará a serlo la foto anterior.':'No cambia tu ahorro actual.'}</p>
+  <div class="btns"><button class="secondary" id="sNo">Cancelar</button><button class="primary danger" id="sOk">Borrar foto</button></div>`);
+  $('#sNo').onclick=closeSheet;
+  $('#sOk').onclick=()=>{$('#sOk').disabled=true; closeSheet(); removeAhorro(id); toast('Foto borrada')};
+}
+
 function renderSum(){
   applyTheme();
   const v=$('#v-sum'), cur=todayStr().slice(0,7), hoy=todayStr();
@@ -813,8 +1031,9 @@ function renderSum(){
   const emptyCat=emptyBlock('chart',`Sin gastos${sum.scope!=='Todo'?' en '+sum.scope:''} ${enMes?'en '+mesTxt:'en los últimos 12 meses'}`,'Prueba con otro mes o registra uno nuevo.',{act:'reg',amb:sum.scope!=='Todo'?sum.scope:'',label:sum.scope!=='Todo'?'Registrar en '+sum.scope:'Registrar un gasto'});
   const emptyP=emptyBlock('people','Aún no hay gastos con otras personas','Al registrar un gasto, elige con quién fue y verás aquí el ranking.');
   // deuda (solo Personal)
-  const D=deudaCalc(db.deuda), dEsc=deudaOk();
+  const D=deudaCalc(db.deuda), dEsc=deudaOk(), MG=sum.scope==='Todo'?margenCalc(db.movimientos,ahorros(),hoy):null;
 
+  const secMargen=sum.scope==='Todo'?margenSec(MG):'';
   // tarjeta de indicadores
   let delta='';
   if(cmp){
@@ -852,7 +1071,7 @@ function renderSum(){
   <div class="seg perseg" id="perSeg" role="group" aria-label="Periodo">${[['mes','Mes'],['12','12 meses']].map(([k,l])=>`<button data-v="${k}" class="${k===sum.period?'on':''}" aria-pressed="${k===sum.period}">${l}</button>`).join('')}</div>
   <div class="card hero"><p class="kl">${enMes?'Gasto de '+mesTxt:'Gasto de los últimos 12 meses'}</p><div class="big">${eur0(gasto)}</div>${delta}
     ${kpis.length?`<div class="kpis">${kpis.join('')}</div>`:''}</div>
-  ${secCat}${secTend}${secQuien}${secDeuda}`;
+  ${secCat}${secMargen}${secTend}${secQuien}${secDeuda}`;
   $('#scopeSeg').onclick=e=>{if(e.target.dataset.v){sum.scope=e.target.dataset.v;renderSum()}};
   $('#perSeg').onclick=e=>{if(e.target.dataset.v){sum.period=e.target.dataset.v;renderSum()}};
   $('#pm').onclick=()=>{sum.ym=ymAdd(sum.ym,-1);renderSum()}; $('#nm').onclick=()=>{sum.ym=ymAdd(sum.ym,1);renderSum()};
@@ -861,6 +1080,8 @@ function renderSum(){
     const s=b.closest('.sec'), id=s.dataset.sec, o=!secOpen[id];
     secOpen[id]=o; s.dataset.open=o; b.setAttribute('aria-expanded',o); LS.set('sec',secOpen)});
   if(fid){const e=document.getElementById(fid); if(e&&v.contains(e)) e.focus({preventScroll:true})}
+  if($('#btnSim')) $('#btnSim').onclick=()=>abrirSim(MG);
+  if($('#btnAhorro')) $('#btnAhorro').onclick=abrirAhorro;
   if($('#btnPago')) $('#btnPago').onclick=()=>abrirPago('Pagado');
   if($('#btnAyuda')) $('#btnAyuda').onclick=()=>abrirPago('Recibido');
   v.querySelectorAll('.delp').forEach(b=>b.onclick=()=>borrarPago(b.dataset.id));
@@ -901,9 +1122,11 @@ function openSettings(first){
   <label for="ck">Clave</label><input id="ck" type="password" autocapitalize="off" autocorrect="off" value="${esc(cfg?.key||'')}" placeholder="La misma que en el código">
   <div id="cerr" class="err" hidden></div>
   <div class="btns"><button class="secondary" id="sNo">${first===true?'Más tarde':'Cerrar'}</button><button class="primary" id="sOk">Conectar</button></div>
+  ${first===true?'':ahorroRowHtml()}
   ${first===true?'':bkRowHtml()}
   ${first===true?'':'<div class="btns"><button class="secondary" id="sReset" style="width:100%;min-height:46px">Borrar datos de este móvil</button></div>'}`);
   if($('#sNo')) $('#sNo').onclick=closeSheet;
+  if($('#sAh')) $('#sAh').onclick=abrirAhorro;
   if($('#sBk')) $('#sBk').onclick=()=>{LS.set('bk',todayStr()); LS.set('bksnz',null); $('#bkLine').textContent='Última copia del Sheet: '+fechaLarga(todayStr()); $('#sBk').disabled=true; $('#sBk').textContent='Hecha hoy'; renderCopia(); say('Copia anotada: hoy')};
   if($('#sReset')) $('#sReset').onclick=()=>{if(confirm('Se borra la copia local y los movimientos sin sincronizar. ¿Seguir?')){localStorage.clear();location.reload()}};
   $('#sOk').onclick=async()=>{
