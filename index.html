@@ -114,7 +114,7 @@ main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .lbl{font-size:0.8125rem;font-weight:600;line-height:1rem;color:var(--muted);margin:0 0 0.25rem;display:flex;gap:0.5rem;align-items:baseline}
 .lbl em{font-style:normal;color:var(--ink);font-weight:700}
 /* captura */
-.row2{display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center}
+.row2{display:flex;flex-wrap:wrap;gap:0.25rem 0.5rem;align-items:center}
 .row2 .seg{flex:1 1 auto;min-width:0}
 .row2 .chip{padding:0 0.75rem}
 .amount{display:flex;justify-content:center;align-items:baseline;gap:8px;font:700 60px/60px var(--sans);font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin:0;min-height:60px}
@@ -123,9 +123,11 @@ main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .desc{width:100%;min-height:3rem;border-radius:1rem;border:1.5px solid var(--line);background:var(--card);color:var(--cink);padding:0 1rem;font-size:1.0625rem}
 .desc::placeholder{color:var(--cmuted)}
 .desc:focus{border-color:var(--act-bg);outline:none}
-.dateBtn{position:relative;cursor:pointer;display:flex;align-items:center;gap:0.375rem}
-.dateBtn svg{width:1.125rem;height:1.125rem;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-.dateBtn input{position:absolute;inset:0;opacity:0;width:100%;height:100%}
+.segdate{position:relative;cursor:pointer;flex:1 1 0;min-height:2.75rem;min-width:max-content;display:flex;align-items:center;justify-content:center;gap:.25rem;border-radius:.875rem;font-weight:600;font-size:.9375rem;color:var(--muted);padding:0 .5rem}
+.segdate.on{background:var(--act-bg);color:var(--act-fg)}
+.segdate svg{width:1.125rem;height:1.125rem;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.segdate input{position:absolute;inset:0;opacity:0;width:100%;height:100%;font-size:16px}
+.row2 #fechaSeg{flex-wrap:nowrap}
 .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:0.375rem 0.5rem;margin-top:0}
 .pad button{min-height:2.75rem;border-radius:1rem;background:var(--card);color:var(--cink);font:600 1.375rem var(--sans);box-shadow:0 1px 0 var(--line)}
 .pad button:active{filter:brightness(.92)}
@@ -280,7 +282,7 @@ body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc
     </div>
     <section class="view on" id="v-add" aria-label="Registrar movimiento">
       <div class="seg" id="ambSeg" role="group" aria-label="Ámbito"></div>
-      <div class="row2"><div class="seg" id="tipoSeg" role="group" aria-label="Tipo"><button data-v="Gasto" class="on" aria-pressed="true">Gasto</button><button data-v="Ingreso" aria-pressed="false">Ingreso</button></div><label class="chip dateBtn" id="dateBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M8 3v4M16 3v4"/></svg><span id="dateTxt">Hoy</span><input type="date" id="dateIn" aria-label="Cambiar fecha"></label><button class="chip" id="yBtn" aria-pressed="false">Ayer</button></div>
+      <div class="row2"><div class="seg" id="tipoSeg" role="group" aria-label="Tipo"><button data-v="Gasto" class="on" aria-pressed="true">Gasto</button><button data-v="Ingreso" aria-pressed="false">Ingreso</button></div><div class="seg" id="fechaSeg" role="group" aria-label="Fecha"><button id="hBtn" class="on" aria-pressed="true">Hoy</button><button id="yBtn" aria-pressed="false">Ayer</button><label class="segdate" id="dateBtn"><svg id="dateIco" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M8 3v4M16 3v4"/></svg><span id="dateTxt" aria-hidden="true"></span><input type="date" id="dateIn" aria-label="Elegir otra fecha"></label></div></div>
       <div class="amount empty" id="amount" aria-live="polite" aria-label="Monto"><span id="amtTxt">0</span><span class="cur">€</span></div>
       <input class="desc" id="desc" placeholder="¿Qué y dónde? Ej: pizza en Antonias" autocomplete="off" autocapitalize="sentences" enterkeyhint="done" aria-label="Descripción">
       <div class="chips" id="cats" role="group" aria-label="Categoría"></div>
@@ -632,9 +634,12 @@ function renderAdd(){
   const opcR=['Personal','A reembolsar',...(st.editId&&(st.reembOrig==='A reembolsar'||st.reembOrig==='Reembolsado')?['Reembolsado']:[])];
   $('#reemb').innerHTML=opcR.map(n=>`<button class="chip ${n===st.reemb?'on':''}" data-r="${n}" aria-pressed="${n===st.reemb}">${n}</button>`).join('');
   $('#people').innerHTML=names.slice(0,14).map(n=>`<button class="chip ${st.people.has(n)?'on':''}" data-p="${esc(n)}" aria-pressed="${st.people.has(n)}">${esc(n)}</button>`).join('')+`<button class="chip ghost" id="newP">+ Nueva</button>`;
-  $('#dateTxt').textContent=st.fecha===todayStr()?'Hoy':st.fecha===yesterdayStr()?'Ayer':(()=>{const [y,m,d]=st.fecha.split('-');return `${+d} ${MESC[m-1]}`})();
-  const yOn=st.fecha===yesterdayStr(); $('#yBtn').classList.toggle('on',yOn); $('#yBtn').setAttribute('aria-pressed',yOn);
-  $('#dateIn').value=st.fecha; $('#dateIn').setAttribute('aria-label','Fecha del movimiento: '+$('#dateTxt').textContent+'. Cambiar fecha');
+  // Fecha: Hoy | Ayer | otra (el tercero enseña la fecha elegida, p. ej. «12 oct», y queda marcado)
+  const esH=st.fecha===todayStr(), esA=st.fecha===yesterdayStr(), otra=!esH&&!esA, [fy,fm,fd]=st.fecha.split('-'), otraTxt=MESC[fm-1]?`${+fd} ${MESC[fm-1]}`:st.fecha;
+  $('#hBtn').classList.toggle('on',esH); $('#hBtn').setAttribute('aria-pressed',esH);
+  $('#yBtn').classList.toggle('on',esA); $('#yBtn').setAttribute('aria-pressed',esA);
+  $('#dateBtn').classList.toggle('on',otra); $('#dateTxt').textContent=otra?otraTxt:''; $('#dateIco').style.display=otra?'none':'';
+  $('#dateIn').value=st.fecha; $('#dateIn').setAttribute('aria-label',otra?`Elegir otra fecha. Seleccionada: ${otraTxt}`:'Elegir otra fecha');
   if($('#v-add').classList.contains('on')) $('#title').textContent=st.editId?'Editar':'Registrar';
   applyTheme();
   renderAmount();
@@ -674,7 +679,8 @@ function initAdd(){
     if(b.id==='newP'){const n=await askText('Nueva persona','Nombre','Ej: Laura'); if(n){const nm=n[0].toUpperCase()+n.slice(1); st.extraPeople.push(nm); st.people.add(nm); renderAdd()} return}
     const n=b.dataset.p; if(st.people.has(n)){st.people.delete(n);st.dismissed.add(n)} else {st.people.add(n);st.dismissed.delete(n)} renderAdd()};
   $('#dateIn').onchange=e=>{if(e.target.value){st.fecha=e.target.value;renderAdd()}};
-  $('#yBtn').onclick=()=>{st.fecha=st.fecha===yesterdayStr()?todayStr():yesterdayStr();renderAdd()};
+  $('#hBtn').onclick=()=>{st.fecha=todayStr();renderAdd()};
+  $('#yBtn').onclick=()=>{st.fecha=yesterdayStr();renderAdd()};
   const d=$('#desc'); d.oninput=onDesc;
   d.onfocus=()=>{$('#app').classList.add('typing'); setTimeout(fitTyping,60)}; d.onblur=()=>$('#app').classList.remove('typing');
   d.onkeydown=e=>{if(e.key==='Enter') d.blur()};
@@ -777,6 +783,8 @@ const FIJAS=['Renta','Teléfono/Internet','Suscripciones','Cuota autónomo','Ges
 const esFija=c=>FIJAS.includes(norm(c));
 const reembolsable=m=>m.ambito==='LaLiga'&&(m.reembolso==='A reembolsar'||m.reembolso==='Reembolsado');   // el dinero vuelve: no es gasto del margen
 const MIN_GASTOS=5, MIN_DIAS=3, VENTANA=6, MIN_TIPICO=3, MIN_BALANCE=2, AHORRO_VIEJO=60;
+const COLCHON_BAJO=3, COLCHON_HOLGADO=6;   // meses: menos de 3 = bajo; de 3 a 6 = correcto; más de 6 = holgado
+const etiquetaColchon=m=>m<COLCHON_BAJO?'colchón bajo':m<=COLCHON_HOLGADO?'colchón correcto':'colchón holgado';
 const mediana=a=>{const s=a.slice().sort((x,y)=>x-y), n=s.length; return r2(n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2)};
 const diasEntre=(a,b)=>Math.round((Date.UTC(+b.slice(0,4),+b.slice(5,7)-1,+b.slice(8,10))-Date.UTC(+a.slice(0,4),+a.slice(5,7)-1,+a.slice(8,10)))/864e5);
 function ahorroActual(rows,hoy){   // la foto más reciente que no sea futura; a igual fecha, la última añadida
@@ -788,7 +796,7 @@ function ahorroActual(rows,hoy){   // la foto más reciente que no sea futura; a
   }
   return best;
 }
-function margenCalc(movs,ahorroRows,hoy){
+function margenCalc(movs,ahorroRows,hoy,deudaRows){
   const cur=hoy.slice(0,7), por={};
   for(const m of movs||[]){
     const ym=String(m.fecha||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(ym)||ym>=cur) continue;   // solo meses completos ya pasados
@@ -814,10 +822,12 @@ function margenCalc(movs,ahorroRows,hoy){
     const dif=vr.reduce((a,x)=>a+x.balance,0)/vr.length-va.reduce((a,x)=>a+x.balance,0)/va.length, u=Math.max(50,0.1*(tipico||0));
     tendencia=dif>u?'mejorando':dif<-u?'empeorando':'igual';
   }
+  // Ayudas de los padres (informativo): solo las «Recibido» fechadas en los mismos meses válidos del balance; el saldo inicial no cuenta
+  const mesesB=new Set(vr.map(x=>x.ym)), ayudas=balance3?r2((deudaRows||[]).reduce((a,d)=>String(d.tipo||'').trim().toLowerCase()==='recibido'&&mesesB.has(String(d.fecha||'').slice(0,7))&&!/saldo inicial/.test(norm(d.nota))&&Number(d.monto_eur)>0?a+Number(d.monto_eur):a,0)):0;
   const A=ahorroActual(ahorroRows,hoy), colchon=A&&tipico>0?Math.round(A.monto/tipico*10)/10:null;
   const pend=(movs||[]).filter(m=>m.tipo==='Gasto'&&m.ambito==='LaLiga'&&m.reembolso==='A reembolsar');
   return {nV,tipico,fijo,variable,ingresoMedio,ingMin:nV?r2(Math.min(...ventana.map(s=>s.ingreso))):null,ingMax:nV?r2(Math.max(...ventana.map(s=>s.ingreso))):null,
-    margen,porAmbito,rec,balance3,tendencia,ahorro:A,colchon,diasAhorro:A?diasEntre(A.fecha,hoy):null,porCobrar:{n:pend.length,total:sumBy(pend,m=>m.monto)}};
+    margen,porAmbito,rec,balance3,ayudas,tendencia,ahorro:A,colchon,diasAhorro:A?diasEntre(A.fecha,hoy):null,porCobrar:{n:pend.length,total:sumBy(pend,m=>m.monto)}};
 }
 // Simulador «¿Y si…?»: solo cuentas, no guarda nada. Los campos vacíos llegan como null.
 function simCalc({ahorro,tipico,ingreso,padres,extra,meses}){
@@ -914,6 +924,7 @@ function margenSec(M){
     const b=M.balance3, ordenados=b.meses.slice().reverse();
     rows.push(mr('Balance de los últimos 3 meses',sgn(b.total),[b.total>0?'Ingresaste más de lo que gastaste':b.total<0?'Gastaste más de lo que ingresaste':'Ingresos y gastos quedaron igual',
       'Tendencia: '+(M.tendencia||'sin comparación todavía'),
+      M.ayudas>0?`Cubierto con ayudas de tus padres: ${Number.isInteger(M.ayudas)?eur0(M.ayudas):eur(M.ayudas)}`:'',
       ordenados.map(x=>`${mesDe(x.ym)}: ${!x.valido?'pocos datos, no cuenta':x.balance>0?`sobraron ${eur0(x.balance)}`:x.balance<0?`faltaron ${eur0(-x.balance)}`:'quedó en 0 €'}`).join(' · ')],b.total<0?'neg':''));
   } else rows.push(mr('Balance de los últimos 3 meses','Faltan datos',['Necesito al menos 2 de los últimos 3 meses con datos suficientes.']));
   if(M.tipico!=null){
@@ -924,10 +935,10 @@ function margenSec(M){
   else rows.push(mr('Margen disponible','Faltan ingresos',[M.tipico!=null?'Registra tus ingresos para calcularlo (necesito ingresos en al menos 2 de esos meses).':'Primero hacen falta meses con gastos.']));
   if(A){
     const viejo=M.diasAhorro>AHORRO_VIEJO;
-    rows.push(mr('Meses de colchón',M.colchon!=null?nMeses(M.colchon):'Faltan datos',[`Ahorro de ${eur0(A.monto)} (foto del ${fechaCorta(A.fecha)})`,M.colchon==null?'Necesito el gasto típico para calcularlo.':'',viejo?'Esa foto tiene más de 60 días: conviene actualizarla.':''],'',viejo&&hayAh?'<button type="button" class="secondary mbtn" id="btnAhorro">Actualizar ahorro</button>':''));
+    rows.push(mr('Meses de colchón',M.colchon!=null?nMeses(M.colchon):'Faltan datos',[M.colchon!=null?(M.colchon<COLCHON_BAJO?`Colchón bajo: menos de ${COLCHON_BAJO} meses.`:M.colchon<=COLCHON_HOLGADO?`Colchón correcto: entre ${COLCHON_BAJO} y ${COLCHON_HOLGADO} meses.`:`Colchón holgado: más de ${COLCHON_HOLGADO} meses.`):'',`Ahorro de ${eur0(A.monto)} (foto del ${fechaCorta(A.fecha)})`,M.colchon==null?'Necesito el gasto típico para calcularlo.':'',viejo?'Esa foto tiene más de 60 días: conviene actualizarla.':''],'',viejo&&hayAh?'<button type="button" class="secondary mbtn" id="btnAhorro">Actualizar ahorro</button>':''));
   } else rows.push(mr('Meses de colchón','Sin ahorro registrado',['Anota tu ahorro actual para saber cuántos meses aguantarías.',hayAh?'':'Para registrarlo hace falta sincronizar con el script actualizado.'],'',hayAh?'<button type="button" class="secondary mbtn" id="btnAhorro">Registrar ahorro</button>':''));
   if(M.porCobrar.n) rows.push(mr('Por cobrar de LaLiga',eur0(M.porCobrar.total),[`${M.porCobrar.n} gasto${M.porCobrar.n>1?'s':''} pendiente${M.porCobrar.n>1?'s':''} de reembolso · no cuenta${M.porCobrar.n>1?'n':''} en el margen`]));
-  const amb=M.porAmbito?`<h3 class="ph">Qué aporta cada ámbito</h3><div class="mrows">${M.porAmbito.map(a=>mr(a.ambito,`${eur0(a.gasto)} de gasto`,[`${eur0(a.ingreso)} de ingresos al mes (media)`])).join('')}</div>`:'';
+  const amb=M.porAmbito?`<h3 class="ph">Qué aporta cada ámbito</h3><div class="mrows">${M.porAmbito.map(a=>mr(a.ambito,`${eur0(a.gasto)} de gasto`,[`${eur0(a.ingreso)} de ingresos al mes (media)`])).join('')}</div><p class="note">Cada ámbito usa su media mensual; el gasto típico usa la mediana, por eso no suman igual.</p>`:'';
   const body=`<p class="sub">Personal, Sporture y LaLiga juntos · meses completos, sin contar el actual</p><div class="mrows">${rows.join('')}</div>${amb}
     <p class="note">Este margen no incluye los reembolsos de LaLiga, por eso puede diferir del Balance de arriba.</p>
     <button type="button" class="secondary mbtn" id="btnSim">¿Y si…?</button>`;
@@ -954,10 +965,10 @@ function abrirSim(M){
     const S=simCalc({ahorro:A?A.monto:null,tipico:M.tipico,ingreso,padres,extra,meses:mm}), l=[];
     if(S.queda==null) l.push('Escribe el ingreso mensual esperado para ver lo que te queda al mes.');
     else l.push(S.queda>=0?`Te quedaría al mes: ${eur0(S.queda)}.`:`Te faltarían ${eur0(-S.queda)} al mes: gastarías más de lo que ingresas.`);
-    if(S.colchon!=null) l.push(`Meses de colchón: ${nMeses(S.colchon)}.`); else if(!A) l.push('Sin ahorro registrado, no puedo calcular el colchón.');
+    if(S.colchon!=null) l.push(`Meses de colchón: ${nMeses(S.colchon)} (${etiquetaColchon(S.colchon)}).`); else if(!A) l.push('Sin ahorro registrado, no puedo calcular el colchón.');
     if(extra>0){
-      if(S.cubre) l.push(`Tu ahorro ya cubre esa compra${S.colchonTras!=null?` y te quedarían ${nMeses(S.colchonTras)} de colchón`:''}.`);
-      if(S.aporte!=null) l.push(`Para juntarlo en ${mm===1?'1 mes':mm+' meses'} tendrías que apartar ${eur0(S.aporte)} al mes${S.quedaTrasAporte!=null?(S.quedaTrasAporte>=0?`; te quedarían ${eur0(S.quedaTrasAporte)} al mes.`:`; te faltarían ${eur0(-S.quedaTrasAporte)} al mes.`):'.'}`);
+      if(S.cubre&&S.colchonTras!=null) l.push(S.colchonTras<COLCHON_BAJO?`Podrías pagarlo con tu ahorro, pero te quedarías con solo ${nMeses(S.colchonTras)} de colchón (${etiquetaColchon(S.colchonTras)}).`:`Puedes pagarlo con tu ahorro y te quedarían ${nMeses(S.colchonTras)} de colchón (${etiquetaColchon(S.colchonTras)}).`);
+      if(S.aporte!=null) l.push(`${S.cubre?'Si prefieres juntarlo':'Para juntarlo'} en ${mm===1?'1 mes':mm+' meses'}, aparta ${Number.isInteger(S.aporte)?eur0(S.aporte):eur(S.aporte)}/mes.${S.quedaTrasAporte!=null?(S.quedaTrasAporte>=0?` Después te quedarían ${eur0(S.quedaTrasAporte)} al mes.`:` Después te faltarían ${eur0(-S.quedaTrasAporte)} al mes.`):''}`);
       if(S.queda!=null) l.push(S.tarda!=null?`Con lo que te queda al mes, lo juntarías en ${S.tarda===1?'1 mes':S.tarda+' meses'}.`:'Con lo que te queda al mes no se puede juntar.');
     }
     r.textContent=l.join(' ');
@@ -1031,7 +1042,7 @@ function renderSum(){
   const emptyCat=emptyBlock('chart',`Sin gastos${sum.scope!=='Todo'?' en '+sum.scope:''} ${enMes?'en '+mesTxt:'en los últimos 12 meses'}`,'Prueba con otro mes o registra uno nuevo.',{act:'reg',amb:sum.scope!=='Todo'?sum.scope:'',label:sum.scope!=='Todo'?'Registrar en '+sum.scope:'Registrar un gasto'});
   const emptyP=emptyBlock('people','Aún no hay gastos con otras personas','Al registrar un gasto, elige con quién fue y verás aquí el ranking.');
   // deuda (solo Personal)
-  const D=deudaCalc(db.deuda), dEsc=deudaOk(), MG=sum.scope==='Todo'?margenCalc(db.movimientos,ahorros(),hoy):null;
+  const D=deudaCalc(db.deuda), dEsc=deudaOk(), MG=sum.scope==='Todo'?margenCalc(db.movimientos,ahorros(),hoy,db.deuda):null;
 
   const secMargen=sum.scope==='Todo'?margenSec(MG):'';
   // tarjeta de indicadores
