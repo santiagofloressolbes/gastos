@@ -364,8 +364,17 @@ const persist=()=>{LS.set('db',db);LS.set('queue',queue);LS.set('delq',delQ);LS.
 /* ---------- red ---------- */
 // Cualquier fallo se reduce a un código interno; el texto crudo del error nunca llega a la pantalla.
 const syncErr=code=>Object.assign(new Error(code),{code});
-const STOP_CODES=['clave','bloqueado','config'];   // no se reintentan solos
+const STOP_CODES=['clave','bloqueado','config','url'];   // no se reintentan solos
+// La dirección del script solo puede ser https://script.google.com/…/exec (sin usuario, sin puerto, sin otro dominio).
+// Es la única comprobación: la usan Ajustes, el enlace de configuración (#u=…&k=…) y cada envío.
+function urlScriptOk(u){
+  if(typeof u!=='string'||!/^[^\s\\]+$/.test(u)) return false;   // sin espacios, saltos ni barras invertidas
+  let x; try{ x=new URL(u) }catch{ return false }
+  return x.protocol==='https:'&&x.hostname==='script.google.com'&&!x.username&&!x.password&&!x.port&&!x.hash&&x.pathname.length>'/exec'.length&&x.pathname.endsWith('/exec');
+}
 async function api(body){
+  if(!cfg||typeof cfg!=='object'||typeof cfg.key!=='string'||!cfg.key) throw syncErr('config');
+  if(!urlScriptOk(cfg.url)) throw syncErr('url');   // nada se envía a una dirección que no sea la de Apps Script
   const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),25000); let txt;
   try{
     const r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({key:cfg.key,...body}),signal:ctl.signal});
@@ -378,8 +387,8 @@ async function api(body){
 }
 const RETRY=[2000,5000,15000,45000];   // espera antes de cada reintento automático (5 intentos en total)
 let lastSay='', syncing=false, again=false, attempt=0, retryT=null, halt=null, lastSync=LS.get('lastsync',0), rejected=LS.get('rejected',[]), syncState={k:'idle'}, compact=false, compactT=null, caps=LS.get('caps',{});
-const STOP_MSG={clave:'La clave no es correcta',bloqueado:'Demasiados intentos, espera unos 15 minutos',config:'Falta configurar el script'};
-const STOP_SHORT={clave:'La clave no es correcta',bloqueado:'Espera unos 15 min',config:'Falta configurar el script'};   // versión corta para el botón; la larga va en el aria-label
+const STOP_MSG={clave:'La clave no es correcta',bloqueado:'Demasiados intentos, espera unos 15 minutos',config:'Falta configurar el script',url:'La dirección del script guardada no es válida y no se envía nada. Corrígela en Ajustes'};
+const STOP_SHORT={clave:'La clave no es correcta',bloqueado:'Espera unos 15 min',config:'Falta configurar el script',url:'Dirección del script no válida'};   // versión corta para el botón; la larga va en el aria-label
 function setPill(k,code){syncState={k,code};renderPill()}
 function ago(t){
   if(!t) return 'aún sin sincronizar';
@@ -899,14 +908,14 @@ function openSettings(first){
   if($('#sReset')) $('#sReset').onclick=()=>{if(confirm('Se borra la copia local y los movimientos sin sincronizar. ¿Seguir?')){localStorage.clear();location.reload()}};
   $('#sOk').onclick=async()=>{
     const url=$('#cu').value.trim(), key=$('#ck').value.trim(), er=$('#cerr'); er.hidden=true;
-    if(!/^https:\/\/script\.google\.com\/.+\/exec/.test(url)){er.textContent='La URL debe empezar por https://script.google.com y terminar en /exec.';er.hidden=false;return}
+    if(!urlScriptOk(url)){er.textContent='La URL debe empezar por https://script.google.com y terminar en /exec.';er.hidden=false;return}
     if(!key){er.textContent='Escribe la clave.';er.hidden=false;return}
     $('#sOk').disabled=true; $('#sOk').textContent='Conectando…';
     const old=cfg; cfg={url,key};
     try{await api({action:'ping'});
       LS.set('cfg',cfg); halt=null; closeSheet(); await sync(); renderAll(); toast('Conectado')}
     catch(e){cfg=old; $('#sOk').disabled=false; $('#sOk').textContent='Conectar';
-      er.textContent=e.code==='clave'?'La clave no coincide con la del código de Apps Script.':e.code==='bloqueado'?'Demasiados intentos, espera unos 15 minutos.':e.code==='config'?'Falta configurar el script.':'No se pudo conectar. Revisa la URL y que el acceso de la implementación sea «Cualquier usuario».'; er.hidden=false}
+      er.textContent=e.code==='clave'?'La clave no coincide con la del código de Apps Script.':e.code==='bloqueado'?'Demasiados intentos, espera unos 15 minutos.':e.code==='url'?'La URL debe empezar por https://script.google.com y terminar en /exec.':e.code==='config'?'Falta configurar el script.':'No se pudo conectar. Revisa la URL y que el acceso de la implementación sea «Cualquier usuario».'; er.hidden=false}
   };
 }
 let sheetFrom=null;
@@ -951,10 +960,15 @@ if(window.visualViewport){
 
 /* ---------- arranque ---------- */
 (function boot(){
-  const h=new URLSearchParams(location.hash.slice(1));
-  if(h.get('u')&&h.get('k')){cfg={url:h.get('u'),key:h.get('k')};LS.set('cfg',cfg);history.replaceState(null,'',location.pathname)}
+  const h=new URLSearchParams(location.hash.slice(1)); let enlaceMalo=false;
+  if(h.has('u')||h.has('k')){   // enlace de configuración: solo se acepta si la dirección es válida y hay clave; si no, se ignora entero y no se toca lo guardado
+    const u=(h.get('u')||'').trim(), k=(h.get('k')||'').trim();
+    if(urlScriptOk(u)&&k){cfg={url:u,key:k};LS.set('cfg',cfg)} else enlaceMalo=true;
+    history.replaceState(null,'',location.pathname);   // en cualquier caso la clave no queda en la dirección ni en el historial
+  }
   fitText(); window.addEventListener('resize',fitText); document.addEventListener('visibilitychange',()=>{if(!document.hidden) fitText()});
   initAdd(); initCopia(); renderAdd(); tab('add'); renderPill();
+  if(enlaceMalo) toast('El enlace de configuración no es válido y se ha ignorado.');
   if(cfg){ sync() } else { openSettings(true) }
   if('serviceWorker' in navigator){
     // Si ya había una versión controlando la app y llega otra nueva, avisa (sin recargar solo, por si estás escribiendo).
