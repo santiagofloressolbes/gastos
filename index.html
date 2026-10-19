@@ -145,7 +145,7 @@ main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .monthnav{display:flex;align-items:center;justify-content:space-between;margin:0.5rem 0 0}
 .monthnav button{min-width:2.75rem;min-height:2.75rem;border-radius:0.875rem;font-size:1.375rem;color:var(--ink)}
 .monthnav button:disabled{opacity:.3}
-.monthnav strong{font:700 1.125rem var(--sans)}
+.monthnav strong{font:700 1.125rem var(--sans);flex:1;text-align:center}
 .row{display:grid;grid-template-columns:1fr auto;gap:0.25rem 0.75rem;padding:0.75rem 0;border-top:1px solid var(--line);width:100%;text-align:left}
 .row:first-of-type{border-top:0}
 .row .n{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -211,6 +211,29 @@ svg g[data-ym]{outline:none} svg g[data-ym]:focus-visible rect{stroke:var(--focu
 .bk #bkLater{background:var(--inp);color:var(--cink);box-shadow:inset 0 0 0 1.5px var(--line)}
 .bkrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem .75rem;margin-top:1.5rem;font-size:.8125rem;color:var(--cmuted)}
 .chip:disabled{background:var(--dis-bg);color:var(--dis-fg);border-color:var(--dis-line);cursor:default}
+/* resumen: indicadores y secciones que se abren y cierran */
+.perseg{margin-top:.5rem}
+.hero .kl{font-size:.8125rem;font-weight:600;color:var(--cmuted);margin:0 0 .25rem}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(8rem,1fr));gap:.75rem 1rem;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line)}
+.kpi{min-width:0}
+.kpi span{display:block;font-size:.8125rem;color:var(--cmuted)}
+.kpi b{display:block;font:700 1.25rem/1.25 var(--sans);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.kpi b.neg{color:var(--cbad)}
+.kpi small{display:block;font-size:.8125rem;color:var(--cmuted)}
+.card.sec{padding:0}
+.card .sh{margin:0}
+.sh button{display:flex;align-items:center;justify-content:space-between;gap:.75rem;width:100%;min-height:3.5rem;padding:.75rem 1.25rem;text-align:left;border-radius:1.5rem}
+.sh button:focus-visible{outline-offset:-3px}
+.sh .stt{display:block;font:700 1.0625rem/1.3 var(--sans)}
+.sh .ssum{display:block;font:400 .8125rem/1.3 var(--sans);color:var(--cmuted)}
+.sec[data-open=true] .ssum{display:none}
+.chev{width:1.25rem;height:1.25rem;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+.sec[data-open=true] .chev{transform:rotate(180deg)}
+.spw{display:grid;grid-template-rows:0fr;transition:grid-template-rows .2s ease}
+.sec[data-open=true] .spw{grid-template-rows:1fr}
+.sp{min-height:0;overflow:hidden;padding:0 1.25rem;visibility:hidden;transition:visibility 0s .2s}   /* cerrada: no se puede enfocar ni leer */
+.sec[data-open=true] .sp{visibility:visible;transition-delay:0s}
+.sp-in{padding:.25rem 0 1.5rem}
 /* cambio de tema suave */
 body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc,.primary,.secondary,.mov,.bk,.bk button,#dock,#sheet,.amount .cur{transition:background-color .35s,color .35s,border-color .35s}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important} .syncbtn.spin svg{animation:none}}
@@ -602,65 +625,113 @@ document.addEventListener('click',e=>{
 const sum={ym:todayStr().slice(0,7),scope:'Personal',period:'mes',metric:'__all'};
 const ymAdd=(ym,n)=>{let [y,m]=ym.split('-').map(Number);m+=n;while(m<1){m+=12;y--}while(m>12){m-=12;y++}return `${y}-${pad2(m)}`};
 const ymLabel=ym=>{const [y,m]=ym.split('-');return `${MES[m-1][0].toUpperCase()+MES[m-1].slice(1)} ${y}`};
-const inScope=m=>m.tipo==='Gasto'&&(sum.scope==='Todo'||m.ambito===sum.scope);
+const ymShort=ym=>{const [y,m]=ym.split('-');return `${MESC[m-1]} ${y}`};
+const r2=n=>Math.round(n*100)/100;
+const sumBy=(arr,f)=>r2(arr.reduce((a,m)=>a+f(m),0));
+
+/* Cálculos del Resumen (sin pantalla, para poder comprobarlos aparte).
+   o = {scope, ym, period:'mes'|'12', hoy:'AAAA-MM-DD' (fecha local)} */
+function cmpIgualDia(gm,ym,hoy){
+  const prev=ymAdd(ym,-1), parcial=ym===hoy.slice(0,7), d=parcial?+hoy.slice(8,10):31;
+  const [py,pm]=prev.split('-').map(Number), dp=new Date(py,pm,0).getDate();   // días del mes anterior (con bisiestos)
+  const dPrev=parcial?Math.min(d,dp):dp;
+  const hasta=(mm,top)=>sumBy(gm.filter(m=>m.fecha.startsWith(mm)&&+m.fecha.slice(8,10)<=top),m=>m.monto);
+  const actual=hasta(ym,d), anterior=hasta(prev,dPrev);
+  return {prev,parcial,d,dPrev,actual,anterior,diff:r2(actual-anterior)};
+}
+function resumenCalc(movs,o){
+  const enAmb=m=>o.scope==='Todo'||m.ambito===o.scope;
+  const gm=movs.filter(m=>m.tipo==='Gasto'&&enAmb(m));
+  const desde=ymAdd(o.ym,-11)+'-01', hasta=ymAdd(o.ym,1)+'-01';
+  const enPer=m=>o.period==='mes'?m.fecha.startsWith(o.ym):(m.fecha>=desde&&m.fecha<hasta);
+  const periodMovs=gm.filter(enPer);
+  const gasto=sumBy(periodMovs,m=>m.monto);
+  const ingresos=sumBy(movs.filter(m=>m.tipo==='Ingreso'&&enAmb(m)&&enPer(m)),m=>m.monto);
+  const pend=(o.scope==='LaLiga'||o.scope==='Todo')?movs.filter(m=>m.tipo==='Gasto'&&m.ambito==='LaLiga'&&m.reembolso==='A reembolsar'):[];
+  return {gm,periodMovs,gasto,ingresos,balance:r2(ingresos-gasto),pend,pendT:sumBy(pend,m=>m.monto),
+    cmp:o.period==='mes'?cmpIgualDia(gm,o.ym,o.hoy):null};
+}
+
+/* Secciones que se abren y cierran: se recuerda solo si están abiertas o cerradas (clave "sec") */
+const SEC_DEF={cat:true,tend:false,quien:false,deuda:false};
+const secOpen=(()=>{const s=LS.get('sec',{})||{}, o={...SEC_DEF}; for(const k in SEC_DEF) if(typeof s[k]==='boolean') o[k]=s[k]; return o})();
+const CHEV='<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+const secHtml=(id,title,summary,body)=>`<section class="card sec" data-sec="${id}" data-open="${secOpen[id]}"><h2 class="sh"><button type="button" id="sb-${id}" aria-expanded="${secOpen[id]}" aria-controls="sp-${id}"><span><span class="stt">${esc(title)}</span><span class="ssum">${esc(summary)}</span></span>${CHEV}</button></h2><div class="spw"><div class="sp" id="sp-${id}" role="region" aria-labelledby="sb-${id}"><div class="sp-in">${body}</div></div></div></section>`;
+
 function renderSum(){
   applyTheme();
-  const v=$('#v-sum'), cur=todayStr().slice(0,7), prev=ymAdd(sum.ym,-1);
+  const v=$('#v-sum'), cur=todayStr().slice(0,7), hoy=todayStr();
   if(!cfg||sinCargar()){ v.innerHTML=`<div class="card">${!cfg?emptyConn():emptyBlock('cloud','Sin datos todavía','Se cargarán al recuperar la conexión.',{act:'retry',label:'Reintentar'})}</div>`; return }
-  const gm=db.movimientos.filter(inScope);
-  const inMonth=gm.filter(m=>m.fecha.startsWith(sum.ym)), inPrev=gm.filter(m=>m.fecha.startsWith(prev));
-  const tot=inMonth.reduce((a,m)=>a+m.monto,0), totP=inPrev.reduce((a,m)=>a+m.monto,0);
-  const ingresos=db.movimientos.filter(m=>m.tipo==='Ingreso'&&m.fecha.startsWith(sum.ym)&&(sum.scope==='Todo'||m.ambito===sum.scope)).reduce((a,m)=>a+m.monto,0);
-  const diff=tot-totP;
-  const periodMovs=sum.period==='mes'?inMonth:gm.filter(m=>m.fecha>=ymAdd(sum.ym,-11)+'-01'&&m.fecha<ymAdd(sum.ym,1)+'-01');
+  const R=resumenCalc(db.movimientos,{scope:sum.scope,ym:sum.ym,period:sum.period,hoy}), {gm,periodMovs,gasto,ingresos,balance,pend,pendT,cmp}=R;
+  const enMes=sum.period==='mes';
   // categorías
   const byCat={}; for(const m of periodMovs) byCat[m.categoria]=(byCat[m.categoria]||0)+m.monto;
-  const ptot=periodMovs.reduce((a,m)=>a+m.monto,0), catRows=Object.entries(byCat).sort((a,b)=>b[1]-a[1]), maxC=catRows[0]?catRows[0][1]:1;
-  // personas
+  const ptot=gasto, catRows=Object.entries(byCat).sort((a,b)=>b[1]-a[1]), maxC=catRows[0]?catRows[0][1]:1;
+  const pct=t=>Math.round(t/ptot*100);
+  // personas (solo se muestran en Personal)
   const byP={}; for(const m of periodMovs){for(const p of String(m.personas||'').split(',').map(s=>s.trim()).filter(Boolean)){const o=byP[p]||(byP[p]={t:0,n:0});o.t+=m.monto;o.n++}}
   const pRows=Object.entries(byP).sort((a,b)=>b[1].t-a[1].t).slice(0,8), maxP=pRows[0]?pRows[0][1].t:1;
-  // tendencia
-  const months=Array.from({length:12},(_,i)=>ymAdd(cur,i-11)), metricOK=sum.metric==='__all'||byCatAll().includes(sum.metric);
-  function byCatAll(){return [...new Set(gm.map(m=>m.categoria))].sort()}
-  const series=months.map(ym=>gm.filter(m=>m.fecha.startsWith(ym)&&(sum.metric==='__all'||m.categoria===sum.metric)).reduce((a,m)=>a+m.monto,0));
+  // tendencia: 12 meses que terminan en el mes que se está viendo
+  const cats=[...new Set(gm.map(m=>m.categoria))].sort();
+  if(sum.metric!=='__all'&&!cats.includes(sum.metric)) sum.metric='__all';   // el filtro no existe en este ámbito
+  const months=Array.from({length:12},(_,i)=>ymAdd(sum.ym,i-11));
+  const series=months.map(ym=>sumBy(gm.filter(m=>m.fecha.startsWith(ym)&&(sum.metric==='__all'||m.categoria===sum.metric)),m=>m.monto));
   const maxS=Math.max(...series,1), W=336,H=118,bw=20,gap=(W-bw*12)/11;
   const bars=months.map((ym,i)=>{const h=Math.max(series[i]?3:0,series[i]/maxS*(H-30)), x=i*(bw+gap), y=H-18-h, sel=ym===sum.ym;
     const path=h>0?`M${x},${y+h}V${y+4}Q${x},${y} ${x+4},${y}H${x+bw-4}Q${x+bw},${y} ${x+bw},${y+4}V${y+h}Z`:'';
     return `<g data-ym="${ym}" style="cursor:pointer" role="button" tabindex="0" aria-label="${MES[+ym.slice(5)-1]} ${ym.slice(0,4)}: ${eur0(series[i])}"${sel?' aria-current="true"':''}><rect x="${x-3}" y="0" width="${bw+6}" height="${H}" fill="transparent"/>${path?`<path d="${path}" fill="${sel?'var(--fill)':'var(--cbar)'}"/>`:''}${sel&&series[i]?`<text x="${i>=10?x+bw:x+bw/2}" y="${Math.max(11,y-5)}" text-anchor="${i>=10?'end':'middle'}" font-size="13" font-weight="700" fill="var(--cink)">${eur0(series[i])}</text>`:''}<text x="${x+bw/2}" y="${H-3}" text-anchor="middle" font-size="12" fill="var(--cmuted)" font-weight="${sel?700:400}">${MESC[+ym.slice(5)-1][0].toUpperCase()}</text></g>`}).join('');
   const mesTxt=`${MES[+sum.ym.slice(5)-1]} de ${sum.ym.slice(0,4)}`, mesesConDatos=series.filter(x=>x>0).length;
-  const emptyCat=emptyBlock('chart',`Sin gastos${sum.scope!=='Todo'?' en '+sum.scope:''} ${sum.period==='mes'?'en '+mesTxt:'en los últimos 12 meses'}`,'Prueba con otro mes o registra uno nuevo.',{act:'reg',amb:sum.scope!=='Todo'?sum.scope:'',label:sum.scope!=='Todo'?'Registrar en '+sum.scope:'Registrar un gasto'});
-  const emptyP=(sum.scope==='Sporture'||sum.scope==='LaLiga')?emptyBlock('people','«Con quién» solo se registra en gastos personales'):emptyBlock('people','Aún no hay gastos con otras personas','Al registrar un gasto, elige con quién fue y verás aquí el ranking.');
-  const pend=sum.scope==='LaLiga'?db.movimientos.filter(m=>m.tipo==='Gasto'&&m.ambito==='LaLiga'&&m.reembolso==='A reembolsar'):[], pendT=Math.round(pend.reduce((a,m)=>a+m.monto,0)*100)/100;
-  // deuda
+  const perTxt=enMes?ymLabel(sum.ym):'Últimos 12 meses hasta '+ymLabel(sum.ym);
+  const emptyCat=emptyBlock('chart',`Sin gastos${sum.scope!=='Todo'?' en '+sum.scope:''} ${enMes?'en '+mesTxt:'en los últimos 12 meses'}`,'Prueba con otro mes o registra uno nuevo.',{act:'reg',amb:sum.scope!=='Todo'?sum.scope:'',label:sum.scope!=='Todo'?'Registrar en '+sum.scope:'Registrar un gasto'});
+  const emptyP=emptyBlock('people','Aún no hay gastos con otras personas','Al registrar un gasto, elige con quién fue y verás aquí el ranking.');
+  // deuda (solo Personal)
   const dsaldo=db.deuda.reduce((a,d)=>a+(d.tipo==='Pagado'?-d.monto_eur:d.monto_eur),0), dlast=db.deuda.filter(d=>d.tipo==='Recibido').sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
+
+  // tarjeta de indicadores
+  let delta='';
+  if(cmp){
+    const pm=MES[+cmp.prev.slice(5)-1], tr=cmp.parcial?`al ${cmp.dPrev===1?'1':'1–'+cmp.dPrev} de ${pm}`:`a ${pm}`;
+    delta=cmp.anterior?`<div class="delta">${cmp.diff===0?'<b>Igual</b>':`<b class="${cmp.diff>0?'up':'down'}">${cmp.diff>0?'▲':'▼'} ${eur0(Math.abs(cmp.diff))}</b>`} frente ${tr} (${eur0(cmp.anterior)})</div>`:'<div class="delta">Sin datos del mes anterior</div>';
+  }
+  const kp=(l,val,sub,cls)=>`<div class="kpi"><span>${esc(l)}</span><b${cls?` class="${cls}"`:''}>${esc(val)}</b>${sub?`<small>${esc(sub)}</small>`:''}</div>`;
+  const kpis=[];
+  if(sum.scope==='Personal'&&catRows[0]) kpis.push(kp('Categoría principal',catRows[0][0],`${pct(catRows[0][1])} % del gasto`));
+  if(pend.length) kpis.push(kp('Pendiente de reembolso',Number.isInteger(pendT)?eur0(pendT):eur(pendT),`${pend.length} gasto${pend.length>1?'s':''} · todos los meses`));
+  if(ingresos>0){ kpis.push(kp('Ingresos',eur0(ingresos))); kpis.push(kp('Balance',eur0(balance),'ingresos − gasto',balance<0?'neg':'')) }
+
+  const secCat=secHtml('cat','En qué se va',catRows.length?`Mayor: ${catRows[0][0]} · ${pct(catRows[0][1])} %`:'Sin gastos en este periodo',
+    `<p class="sub">${esc(perTxt)}${catRows.length?' · toca una categoría para ver sus gastos':''}</p>${catRows.length?catRows.map(([c,t],i)=>`<button class="row" data-cat="${esc(c)}" aria-expanded="false" aria-controls="dt-${i}"><span class="n">${esc(c)}</span><span class="v">${eur0(t)}<small>${pct(t)} %</small></span><span class="bar"><i style="width:${Math.max(2,t/maxC*100)}%"></i></span></button><div class="detail" id="dt-${i}" data-for="${esc(c)}" hidden></div>`).join(''):emptyCat}`);
+  const iMax=series.indexOf(Math.max(...series));
+  const secTend=secHtml('tend','Tendencia mensual',mesesConDatos?`Más alto: ${MES[+months[iMax].slice(5)-1]} · ${eur0(series[iMax])}`:'Sin gastos que comparar',
+    `<div class="head"><span class="sub" style="margin:0">${esc(ymShort(months[0]))} – ${esc(ymShort(sum.ym))}</span><select id="metric" aria-label="Qué mostrar"><option value="__all">Todo el gasto</option>${cats.map(c=>`<option value="${esc(c)}" ${c===sum.metric?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+    ${mesesConDatos?`<p class="sub">Toca una barra para ver ese mes</p>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" role="group" aria-label="Gasto de los 12 meses hasta ${MES[+sum.ym.slice(5)-1]} de ${sum.ym.slice(0,4)}. Toca un mes para verlo.">${bars}</svg>${mesesConDatos===1?'<p class="note">Con más meses verás la evolución.</p>':''}`:emptyBlock('chart','Aún no hay gastos que comparar','Con un par de meses de gastos verás aquí cómo evolucionan.')}`);
+  const secQuien=sum.scope==='Personal'?secHtml('quien','Con quién',pRows.length?`${pRows[0][0]} · ${eur0(pRows[0][1].t)}`:'Sin gastos con otras personas',
+    `<p class="sub">${enMes?ymLabel(sum.ym):'Últimos 12 meses'} · gasto en planes donde apareció cada persona</p>${pRows.length?pRows.map(([p,o])=>`<div class="row"><span class="n">${esc(p)}</span><span class="v">${eur0(o.t)}<small>${o.n} ${o.n>1?'veces':'vez'}</small></span><span class="bar"><i style="width:${Math.max(2,o.t/maxP*100)}%"></i></span></div>`).join(''):emptyP}${pRows.length?'<p class="note">Si una cuenta incluye a varias personas, el monto completo cuenta para cada una.</p>':''}`):'';
+  const secDeuda=(sum.scope==='Personal'&&db.deuda.length)?secHtml('deuda','Deuda con tus padres',`Saldo ${eur0(dsaldo)}`,
+    `<div class="big" style="margin-top:6px">${eur0(dsaldo)}</div><p class="sub" style="margin-top:6px">${dlast?`Última ayuda recibida: ${eur0(dlast.monto_eur)} (${+dlast.fecha.slice(8)} ${MESC[+dlast.fecha.slice(5,7)-1]})`:''} · sin intereses ni fecha límite</p>`):'';
+
   v.innerHTML=`
   <div class="seg" id="scopeSeg" role="group" aria-label="Ámbito">${['Personal','Sporture','LaLiga','Todo'].map(s=>`<button data-v="${s}" class="${s===sum.scope?'on':''}" aria-pressed="${s===sum.scope}">${s}</button>`).join('')}</div>
-  <div class="monthnav"><button id="pm" aria-label="Mes anterior">‹</button><strong>${ymLabel(sum.ym)}</strong><button id="nm" aria-label="Mes siguiente" ${sum.ym>=cur?'disabled':''}>›</button></div>
-  <div class="card"><div class="big">${eur0(tot)}</div>
-    <div class="delta">${totP?`<b class="${diff>0?'up':'down'}">${diff>0?'▲':'▼'} ${eur0(Math.abs(diff))}</b> frente a ${MES[+prev.slice(5)-1]} (${eur0(totP)})`:'Sin datos del mes anterior'}</div>
-    ${ingresos?`<div class="delta">Ingresos del mes: <b>${eur0(ingresos)}</b></div>`:''}
-    ${pend.length?`<div class="delta">Pendiente de reembolso: <b>${Number.isInteger(pendT)?eur0(pendT):eur(pendT)}</b> (${pend.length} gasto${pend.length>1?'s':''})</div>`:''}</div>
-  <div class="card"><div class="head"><h2>En qué se va</h2><div class="seg" id="perSeg" role="group" aria-label="Periodo" style="min-width:160px">${[['mes','Mes'],['12','12 meses']].map(([k,l])=>`<button data-v="${k}" class="${k===sum.period?'on':''}" aria-pressed="${k===sum.period}">${l}</button>`).join('')}</div></div>
-    <p class="sub">${sum.period==='mes'?ymLabel(sum.ym):'Últimos 12 meses hasta '+ymLabel(sum.ym)}${catRows.length?' · toca una categoría para ver sus gastos':''}</p>
-    ${catRows.length?catRows.map(([c,t])=>`<button class="row" data-cat="${esc(c)}"><span class="n">${esc(c)}</span><span class="v">${eur0(t)}<small>${Math.round(t/ptot*100)} %</small></span><span class="bar"><i style="width:${Math.max(2,t/maxC*100)}%"></i></span></button><div class="detail" data-for="${esc(c)}" hidden></div>`).join(''):emptyCat}</div>
-  <div class="card"><div class="head"><h2>Tendencia mensual</h2><select id="metric" aria-label="Qué mostrar"><option value="__all">Todo el gasto</option>${byCatAll().map(c=>`<option value="${esc(c)}" ${c===sum.metric?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
-    ${mesesConDatos?`<p class="sub">Toca una barra para cambiar de mes</p>
-    <svg viewBox="0 0 ${W} ${H}" width="100%" role="group" aria-label="Gasto de los últimos 12 meses. Toca un mes para verlo.">${bars}</svg>${mesesConDatos===1?'<p class="note">Con más meses verás la evolución.</p>':''}`:emptyBlock('chart','Aún no hay gastos que comparar','Con un par de meses de gastos verás aquí cómo evolucionan.')}</div>
-  <div class="card"><h2>Con quién</h2><p class="sub">${sum.period==='mes'?ymLabel(sum.ym):'Últimos 12 meses'} · gasto en planes donde apareció cada persona</p>
-    ${pRows.length?pRows.map(([p,o])=>`<div class="row"><span class="n">${esc(p)}</span><span class="v">${eur0(o.t)}<small>${o.n} ${o.n>1?'veces':'vez'}</small></span><span class="bar"><i style="width:${Math.max(2,o.t/maxP*100)}%"></i></span></div>`).join(''):emptyP}
-    ${pRows.length?'<p class="note">Si una cuenta incluye a varias personas, el monto completo cuenta para cada una.</p>':''}</div>
-  ${db.deuda.length?`<div class="card"><h2>Deuda con tus padres</h2><div class="big" style="margin-top:6px">${eur0(dsaldo)}</div><p class="sub" style="margin-top:6px">${dlast?`Última ayuda recibida: ${eur0(dlast.monto_eur)} (${+dlast.fecha.slice(8)} ${MESC[+dlast.fecha.slice(5,7)-1]})`:''} · sin intereses ni fecha límite</p></div>`:''}`;
+  <div class="monthnav"><button id="pm" aria-label="Mes anterior">‹</button><strong>${enMes?ymLabel(sum.ym):esc(ymShort(months[0]))+' – '+esc(ymShort(sum.ym))}</strong><button id="nm" aria-label="Mes siguiente" ${sum.ym>=cur?'disabled':''}>›</button></div>
+  <div class="seg perseg" id="perSeg" role="group" aria-label="Periodo">${[['mes','Mes'],['12','12 meses']].map(([k,l])=>`<button data-v="${k}" class="${k===sum.period?'on':''}" aria-pressed="${k===sum.period}">${l}</button>`).join('')}</div>
+  <div class="card hero"><p class="kl">${enMes?'Gasto de '+mesTxt:'Gasto de los últimos 12 meses'}</p><div class="big">${eur0(gasto)}</div>${delta}
+    ${kpis.length?`<div class="kpis">${kpis.join('')}</div>`:''}</div>
+  ${secCat}${secTend}${secQuien}${secDeuda}`;
   $('#scopeSeg').onclick=e=>{if(e.target.dataset.v){sum.scope=e.target.dataset.v;renderSum()}};
   $('#perSeg').onclick=e=>{if(e.target.dataset.v){sum.period=e.target.dataset.v;renderSum()}};
   $('#pm').onclick=()=>{sum.ym=ymAdd(sum.ym,-1);renderSum()}; $('#nm').onclick=()=>{sum.ym=ymAdd(sum.ym,1);renderSum()};
   $('#metric').onchange=e=>{sum.metric=e.target.value;renderSum()};
+  v.querySelectorAll('.sh button').forEach(b=>b.onclick=()=>{   // abrir/cerrar sin repintar: el foco se queda donde está
+    const s=b.closest('.sec'), id=s.dataset.sec, o=!secOpen[id];
+    secOpen[id]=o; s.dataset.open=o; b.setAttribute('aria-expanded',o); LS.set('sec',secOpen)});
   v.querySelectorAll('svg g[data-ym]').forEach(g=>{g.onclick=()=>{sum.ym=g.dataset.ym;renderSum()}; g.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();g.onclick()}}});
   v.querySelectorAll('button.row').forEach(b=>b.onclick=()=>{
     const box=v.querySelector(`.detail[data-for="${CSS.escape(b.dataset.cat)}"]`);
-    if(!box.hidden){box.hidden=true;return}
+    if(!box.hidden){box.hidden=true;b.setAttribute('aria-expanded','false');return}
     const items=periodMovs.filter(m=>m.categoria===b.dataset.cat).sort((a,c)=>c.monto-a.monto).slice(0,6);
     box.innerHTML=items.map(m=>`<div><span>${esc(m.descripcion)}${m.personas?' · '+esc(m.personas):''}</span><span>${eur(m.monto)}</span></div>`).join('');
-    box.hidden=false});
+    box.hidden=false; b.setAttribute('aria-expanded','true')});
 }
 
 /* ---------- historial ---------- */
