@@ -133,7 +133,7 @@ main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 #dock{flex:none;position:relative;padding:0.5rem 24px 0.25rem;background:var(--bg)}
 .primary{width:100%;min-height:3.5rem;border-radius:1.125rem;background:var(--act-bg);color:var(--act-fg);font-weight:700;font-size:1.0625rem}
 .primary:disabled{background:var(--dis-bg);color:var(--dis-fg);box-shadow:inset 0 0 0 1.5px var(--dis-line);cursor:not-allowed}
-#app.typing .pad,#app.typing .tabs,#app.typing #peopleBox,#app.typing #ambSeg,#app.typing #bk{display:none}
+#app.typing .pad,#app.typing .tabs,#app.typing #peopleBox,#app.typing #reembBox,#app.typing #ambSeg,#app.typing #bk{display:none}
 /* tarjetas */
 .card{background:var(--card);color:var(--cink);border-radius:1.5rem;padding:1.5rem 1.25rem;margin-top:1rem}
 .card h2{font:700 1.0625rem var(--sans);margin:0 0 0.25rem}
@@ -196,6 +196,10 @@ svg g[data-ym]{outline:none} svg g[data-ym]:focus-visible rect{stroke:var(--focu
 .vacio h3{font:700 1.0625rem/1.3 var(--sans);margin:.25rem 0 0;color:var(--cink)}
 .vacio p{margin:0;font-size:.875rem;color:var(--cmuted)}
 .vacio .chip{margin-top:.75rem}
+/* etiqueta de reembolso (siempre con texto, no solo color) */
+.mov .t{grid-column:1;grid-row:3;margin-top:.25rem}
+.tag{display:inline-block;padding:.0625rem .5rem;border-radius:99px;font-size:.75rem;font-weight:700;line-height:1.4;box-shadow:inset 0 0 0 1.5px currentColor}
+.tag-p{color:var(--cink)} .tag-r{color:var(--cmuted)} .tag-a{background:var(--act-bg);color:var(--act-fg);box-shadow:none}
 /* aviso mensual de copia */
 .bk{display:flex;flex-direction:column;gap:.5rem;margin:.5rem 0 .25rem;padding:.75rem .875rem;border-radius:1.5rem;background:var(--card);color:var(--cink);border:1.5px solid var(--line)}
 .bk .bkt{display:flex;flex-direction:column;line-height:1.3}
@@ -231,6 +235,8 @@ body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc
       <div class="chips" id="cats" role="group" aria-label="Categoría"></div>
       <div id="peopleBox"><div class="lbl">Con quién <span>(opcional)</span></div>
       <div class="chips" id="people"></div></div>
+      <div id="reembBox" hidden><div class="lbl">Reembolso <span>(opcional)</span></div>
+      <div class="chips" id="reemb" role="group" aria-label="Reembolso"></div></div>
       <div class="pad" id="pad"></div>
     </section>
     <section class="view" id="v-sum" aria-label="Resumen"></section>
@@ -330,7 +336,7 @@ async function api(body){
   return j;
 }
 const RETRY=[2000,5000,15000,45000];   // espera antes de cada reintento automático (5 intentos en total)
-let lastSay='', syncing=false, again=false, attempt=0, retryT=null, halt=null, lastSync=LS.get('lastsync',0), rejected=LS.get('rejected',[]), syncState={k:'idle'}, compact=false, compactT=null;
+let lastSay='', syncing=false, again=false, attempt=0, retryT=null, halt=null, lastSync=LS.get('lastsync',0), rejected=LS.get('rejected',[]), syncState={k:'idle'}, compact=false, compactT=null, caps=LS.get('caps',{});
 const STOP_MSG={clave:'La clave no es correcta',bloqueado:'Demasiados intentos, espera unos 15 minutos',config:'Falta configurar el script'};
 const STOP_SHORT={clave:'La clave no es correcta',bloqueado:'Espera unos 15 min',config:'Falta configurar el script'};   // versión corta para el botón; la larga va en el aria-label
 function setPill(k,code){syncState={k,code};renderPill()}
@@ -353,7 +359,7 @@ function renderPill(){
     if(k==='retry'&&!off){note='Reintentando…'; full='No se pudo sincronizar, reintentando…'; cls='wait'}
     else if(k==='fail'&&!off){note='Toca para reintentar'; full='No se pudo sincronizar. Toca para reintentar.'; cls='err'}
     else if(k==='stop'){note=STOP_SHORT[syncState.code]||'No se pudo sincronizar'; full=STOP_MSG[syncState.code]||note; cls='err'}
-    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
+    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=rejected.every(r=>r.motivo==='reembolso')?`${nr} reembolso${pl} sin guardar`:`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
   }
   // Compacto (solo icono y puntito) 3 s después de quedar todo sincronizado; se expande en cuanto hay algo que decir.
   const calm=!!cfg&&k==='ok'&&!n&&!nr&&!off;
@@ -366,8 +372,10 @@ function renderPill(){
   const estable=(k==='ok'&&!n&&!off)||off||k==='retry'||k==='fail'||k==='stop';   // no se anuncian los estados de paso (p. ej. el "Pendiente" justo antes de sincronizar)
   if(cfg&&k!=='idle'&&estable&&key!==lastSay){lastSay=key; say(label+(full?'. '+full:''))}
 }
+const reembOk=()=>!!caps&&caps.reembolso===true;   // el script avisa de que entiende el campo "reembolso"
 function showRejected(){
-  openSheet(`<h2>Movimientos no válidos</h2><p>No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.</p>${rejected.map(m=>`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}</p>`).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
+  const solo=rejected.length>0&&rejected.every(m=>m.motivo==='reembolso');
+  openSheet(`<h2>${solo?'Reembolsos sin guardar':'Movimientos no válidos'}</h2><p>${solo?'El script no guardó la marca de reembolso de estos movimientos: están en la hoja, pero sin marca. Actualiza el script y vuelve a marcarlos desde Editar.':'No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.'}</p>${rejected.map(m=>`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}${m.motivo==='reembolso'?' · '+esc(m.reembolso):''}</p>`).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
   $('#sNo').onclick=()=>{closeSheet();sync(true)};
   $('#sDel').onclick=()=>{rejected=[];LS.set('rejected',rejected);closeSheet();sync(true)};
 }
@@ -379,10 +387,11 @@ async function run(force){
   if(halt&&!force){ if(halt.code==='bloqueado'&&Date.now()>halt.until) halt=null; else return }   // no insistir con una clave mala
   if(!navigator.onLine&&!force){setPill('off');return}
   syncing=true; again=false; setPill('sync');
-  let ok=false, code='red', apartados=0;
+  let ok=false, code='red', apartados=0, malTag=0; const tagged=[];
   // Un envío aceptado: si se deshizo mientras viajaba, ya está en el Sheet y se manda a borrar.
   const enviado=items=>{
     for(const b of items) if(!queue.some(x=>x.id===b.id)) delQ.push(b.id);
+    for(const b of items) if(b.reembolso) tagged.push(b);
     queue=queue.filter(x=>!items.some(b=>b.id===x.id)); persist();
   };
   try{
@@ -405,10 +414,18 @@ async function run(force){
     const d=await api({action:'data'}), dels=new Set(delQ.map(String));
     db={movimientos:(d.movimientos||[]).filter(m=>!dels.has(String(m.id))),categorias:d.categorias||[],personas:d.personas||[],deuda:d.deuda||[]};
     for(const q of queue) if(!db.movimientos.some(m=>m.id===q.id)) db.movimientos.push(q);
+    caps={reembolso:d.reembolso===true}; LS.set('caps',caps);   // sin el flag la fila de reembolso se oculta y no se envía nada
+    // Comprobación acotada (no lanza ni frena nada): si un movimiento enviado con marca vuelve sin ella, el script no la guardó.
+    if(tagged.length){ try{
+      const por=new Map((d.movimientos||[]).map(m=>[String(m.id),m]));
+      for(const it of tagged){ const sv=por.get(String(it.id)); if(sv&&(sv.reembolso||'')!==it.reembolso&&!rejected.some(r=>r.id===it.id)){rejected.push({...it,motivo:'reembolso'}); malTag++} }
+      if(malTag) LS.set('rejected',rejected);
+    }catch{} }
     idx=null; persist(); ok=true;
   }catch(e){ code=(e&&e.code)||'red' }
   finally{ syncing=false }
   if(ok){ attempt=0; halt=null; lastSync=Date.now(); LS.set('lastsync',lastSync); setPill('ok'); renderAll();
+    if(malTag) toast(`El script no guardó el reembolso de ${malTag>1?malTag+' movimientos':'un movimiento'}. Toca el indicador para verlo.`);
     if(apartados) toast(`${apartados>1?apartados+' movimientos no se han':'Un movimiento no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`) }
   else if(STOP_CODES.includes(code)){ halt={code,until:Date.now()+15*60000}; setPill('stop',code) }
   else if(!navigator.onLine) setPill('off');
@@ -452,8 +469,8 @@ function applyTheme(){
 }
 
 /* ---------- captura ---------- */
-const st={tipo:'Gasto',ambito:'Personal',amount:'',desc:'',cat:null,catAuto:false,people:new Set(),dismissed:new Set(),fecha:todayStr(),extraPeople:[],editId:null};
-function resetForm(){Object.assign(st,{amount:'',desc:'',cat:null,catAuto:false,people:new Set(),dismissed:new Set(),fecha:todayStr(),extraPeople:[],editId:null});$('#desc').value='';renderAdd()}
+const st={tipo:'Gasto',ambito:'Personal',amount:'',desc:'',cat:null,catAuto:false,people:new Set(),dismissed:new Set(),fecha:todayStr(),extraPeople:[],editId:null,reemb:'',reembOrig:''};
+function resetForm(){Object.assign(st,{amount:'',desc:'',cat:null,catAuto:false,people:new Set(),dismissed:new Set(),fecha:todayStr(),extraPeople:[],editId:null,reemb:'',reembOrig:''});$('#desc').value='';renderAdd()}
 const amtNum=()=>parseFloat((st.amount||'0').replace(',','.'))||0;
 function renderAmount(){
   const a=$('#amount'); a.classList.toggle('empty',!st.amount);
@@ -482,6 +499,12 @@ function renderAdd(){
   const names=[...new Set([...db.personas.map(p=>p.nombre),...st.extraPeople,...st.people])];
   names.sort((a,b)=>(pf[b]||0)-(pf[a]||0)||a.localeCompare(b,'es'));   // más usada primero; empate: alfabético
   $('#peopleBox').hidden=st.ambito!=='Personal';                          // "Con quién" solo en Personal
+  // "Reembolso": solo gastos de LaLiga y solo si el script lo entiende. Al salir de ahí la marca se borra (al editar se conserva hasta guardar).
+  const verR=reembOk()&&st.ambito==='LaLiga'&&st.tipo==='Gasto';
+  if(!verR&&!st.editId) st.reemb='';
+  $('#reembBox').hidden=!verR;
+  const opcR=['Personal','A reembolsar',...(st.editId&&(st.reembOrig==='A reembolsar'||st.reembOrig==='Reembolsado')?['Reembolsado']:[])];
+  $('#reemb').innerHTML=opcR.map(n=>`<button class="chip ${n===st.reemb?'on':''}" data-r="${n}" aria-pressed="${n===st.reemb}">${n}</button>`).join('');
   $('#people').innerHTML=names.slice(0,14).map(n=>`<button class="chip ${st.people.has(n)?'on':''}" data-p="${esc(n)}" aria-pressed="${st.people.has(n)}">${esc(n)}</button>`).join('')+`<button class="chip ghost" id="newP">+ Nueva</button>`;
   $('#dateTxt').textContent=st.fecha===todayStr()?'Hoy':st.fecha===yesterdayStr()?'Ayer':(()=>{const [y,m,d]=st.fecha.split('-');return `${+d} ${MESC[m-1]}`})();
   const yOn=st.fecha===yesterdayStr(); $('#yBtn').classList.toggle('on',yOn); $('#yBtn').setAttribute('aria-pressed',yOn);
@@ -520,6 +543,7 @@ function initAdd(){
   $('#tipoSeg').onclick=e=>{const v=e.target.dataset.v; if(v){st.tipo=v;st.cat=null;st.catAuto=false;onDesc()}};
   $('#ambSeg').onclick=e=>{const v=e.target.dataset.v; if(v){st.ambito=v;st.cat=null;st.catAuto=false; if(v!=='Personal'&&!st.editId){st.people.clear();st.dismissed.clear()} onDesc()}};
   $('#cats').onclick=e=>{const c=e.target.dataset.cat; if(c){st.cat=c;st.catAuto=false;renderAdd()}};
+  $('#reemb').onclick=e=>{const b=e.target.closest('[data-r]'); if(!b) return; st.reemb=st.reemb===b.dataset.r?'':b.dataset.r; renderAdd()};   // se puede desmarcar
   $('#people').onclick=async e=>{const b=e.target.closest('button'); if(!b) return;
     if(b.id==='newP'){const n=await askText('Nueva persona','Nombre','Ej: Laura'); if(n){const nm=n[0].toUpperCase()+n.slice(1); st.extraPeople.push(nm); st.people.add(nm); renderAdd()} return}
     const n=b.dataset.p; if(st.people.has(n)){st.people.delete(n);st.dismissed.add(n)} else {st.people.add(n);st.dismissed.delete(n)} renderAdd()};
@@ -536,10 +560,17 @@ function removeMov(id){
   const inQ=queue.findIndex(q=>q.id===id); if(inQ>=0) queue.splice(inQ,1); else delQ.push(id);
   db.movimientos=db.movimientos.filter(m=>m.id!==id); idx=null; persist(); renderAll(); sync();
 }
+function marcarReembolsado(m){
+  const nuevo={...m,id:uid(),reembolso:'Reembolsado'};
+  const inQ=queue.findIndex(q=>q.id===m.id); if(inQ>=0) queue.splice(inQ,1); else delQ.push(m.id);
+  db.movimientos=db.movimientos.filter(x=>x.id!==m.id); db.movimientos.push(nuevo); queue.push(nuevo); idx=null; persist(); renderAll(); sync();
+  toast('Marcado como reembolsado');
+}
 function save(){
   const monto=Math.round(amtNum()*100)/100; if(!(monto>0)||!st.cat) return;
   $('#desc').blur();
   const item={id:uid(),fecha:st.fecha,tipo:st.tipo,monto,descripcion:st.desc.trim()||st.cat,categoria:st.cat,ambito:st.ambito,personas:(st.ambito==='Personal'||st.editId)?[...st.people].join(', '):'',fecha_aprox:'No',nota:''};
+  if(st.ambito==='LaLiga'&&st.tipo==='Gasto'&&st.reemb) item.reembolso=st.reemb;   // sin marca no se envía el campo
   for(const n of st.extraPeople) if(st.people.has(n)&&!db.personas.some(p=>p.nombre===n)) db.personas.push({nombre:n,alias:''});
   const editing=st.editId; if(editing) removeMov(editing);
   db.movimientos.push(item); queue.push(item); idx=null; persist();
@@ -599,6 +630,7 @@ function renderSum(){
   const mesTxt=`${MES[+sum.ym.slice(5)-1]} de ${sum.ym.slice(0,4)}`, mesesConDatos=series.filter(x=>x>0).length;
   const emptyCat=emptyBlock('chart',`Sin gastos${sum.scope!=='Todo'?' en '+sum.scope:''} ${sum.period==='mes'?'en '+mesTxt:'en los últimos 12 meses'}`,'Prueba con otro mes o registra uno nuevo.',{act:'reg',amb:sum.scope!=='Todo'?sum.scope:'',label:sum.scope!=='Todo'?'Registrar en '+sum.scope:'Registrar un gasto'});
   const emptyP=(sum.scope==='Sporture'||sum.scope==='LaLiga')?emptyBlock('people','«Con quién» solo se registra en gastos personales'):emptyBlock('people','Aún no hay gastos con otras personas','Al registrar un gasto, elige con quién fue y verás aquí el ranking.');
+  const pend=sum.scope==='LaLiga'?db.movimientos.filter(m=>m.tipo==='Gasto'&&m.ambito==='LaLiga'&&m.reembolso==='A reembolsar'):[], pendT=Math.round(pend.reduce((a,m)=>a+m.monto,0)*100)/100;
   // deuda
   const dsaldo=db.deuda.reduce((a,d)=>a+(d.tipo==='Pagado'?-d.monto_eur:d.monto_eur),0), dlast=db.deuda.filter(d=>d.tipo==='Recibido').sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
   v.innerHTML=`
@@ -606,7 +638,8 @@ function renderSum(){
   <div class="monthnav"><button id="pm" aria-label="Mes anterior">‹</button><strong>${ymLabel(sum.ym)}</strong><button id="nm" aria-label="Mes siguiente" ${sum.ym>=cur?'disabled':''}>›</button></div>
   <div class="card"><div class="big">${eur0(tot)}</div>
     <div class="delta">${totP?`<b class="${diff>0?'up':'down'}">${diff>0?'▲':'▼'} ${eur0(Math.abs(diff))}</b> frente a ${MES[+prev.slice(5)-1]} (${eur0(totP)})`:'Sin datos del mes anterior'}</div>
-    ${ingresos?`<div class="delta">Ingresos del mes: <b>${eur0(ingresos)}</b></div>`:''}</div>
+    ${ingresos?`<div class="delta">Ingresos del mes: <b>${eur0(ingresos)}</b></div>`:''}
+    ${pend.length?`<div class="delta">Pendiente de reembolso: <b>${Number.isInteger(pendT)?eur0(pendT):eur(pendT)}</b> (${pend.length} gasto${pend.length>1?'s':''})</div>`:''}</div>
   <div class="card"><div class="head"><h2>En qué se va</h2><div class="seg" id="perSeg" role="group" aria-label="Periodo" style="min-width:160px">${[['mes','Mes'],['12','12 meses']].map(([k,l])=>`<button data-v="${k}" class="${k===sum.period?'on':''}" aria-pressed="${k===sum.period}">${l}</button>`).join('')}</div></div>
     <p class="sub">${sum.period==='mes'?ymLabel(sum.ym):'Últimos 12 meses hasta '+ymLabel(sum.ym)}${catRows.length?' · toca una categoría para ver sus gastos':''}</p>
     ${catRows.length?catRows.map(([c,t])=>`<button class="row" data-cat="${esc(c)}"><span class="n">${esc(c)}</span><span class="v">${eur0(t)}<small>${Math.round(t/ptot*100)} %</small></span><span class="bar"><i style="width:${Math.max(2,t/maxC*100)}%"></i></span></button><div class="detail" data-for="${esc(c)}" hidden></div>`).join(''):emptyCat}</div>
@@ -638,15 +671,15 @@ function renderHis(){
   if(!list.length) html+=`<div class="card">${!cfg||sinCargar()?emptyConn():emptyBlock('list','Aún no hay movimientos','Cuando registres un gasto o un ingreso, aparecerá aquí.',{act:'reg',label:'Registrar un gasto'})}</div>`;
   for(const m of list){
     if(m.fecha!==last){last=m.fecha; const [y,mo,d]=m.fecha.split('-'); html+=`<div class="day">${m.fecha===todayStr()?'Hoy':esc(`${+d} de ${MES[mo-1]} ${y}`)}</div>`}
-    html+=`<button class="mov" data-id="${esc(m.id)}"><span class="d">${esc(m.descripcion)}</span><span class="s">${esc(m.categoria)}${m.personas?' · '+esc(m.personas):''}${m.ambito!=='Personal'&&m.ambito!==m.categoria?' · '+esc(m.ambito):''}</span><span class="a ${m.tipo==='Ingreso'?'in':''}">${m.tipo==='Ingreso'?'+':''}${eur(m.monto)}</span></button>`;
+    html+=`<button class="mov" data-id="${esc(m.id)}"><span class="d">${esc(m.descripcion)}</span><span class="s">${esc(m.categoria)}${m.personas?' · '+esc(m.personas):''}${m.ambito!=='Personal'&&m.ambito!==m.categoria?' · '+esc(m.ambito):''}</span><span class="a ${m.tipo==='Ingreso'?'in':''}">${m.tipo==='Ingreso'?'+':''}${eur(m.monto)}</span>${m.reembolso?`<span class="t"><span class="tag tag-${({'Personal':'p','A reembolsar':'a','Reembolsado':'r'})[m.reembolso]||'p'}">${esc(m.reembolso)}</span></span>`:''}</button>`;
   }
   v.innerHTML=html;
   $('#cfgBtn').onclick=openSettings;
   v.querySelectorAll('.mov').forEach(b=>b.onclick=()=>{
     const m=db.movimientos.find(x=>x.id===b.dataset.id); if(!m) return;
-    openSheet(`<h2>${esc(m.descripcion)}</h2><p>${eur(m.monto)} · ${esc(m.categoria)} · ${esc(m.ambito)}${m.personas?' · con '+esc(m.personas):''}<br>${esc(m.fecha)}${m.fecha_aprox==='Sí'?' (fecha aproximada)':''}</p><div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="secondary" id="sEdit">Editar</button><button class="primary danger" id="sDel">Eliminar</button></div>`);
-    $('#sNo').onclick=closeSheet;
-    $('#sEdit').onclick=()=>{closeSheet(); Object.assign(st,{tipo:m.tipo,ambito:m.ambito,amount:String(m.monto).replace('.',','),desc:m.descripcion,cat:m.categoria,catAuto:false,people:new Set(String(m.personas||'').split(',').map(x=>x.trim()).filter(Boolean)),dismissed:new Set(),fecha:m.fecha,extraPeople:[],editId:m.id}); $('#desc').value=m.descripcion; tab('add'); renderAdd()}; $('#sDel').onclick=()=>{closeSheet();removeMov(m.id);toast('Movimiento eliminado')};
+    openSheet(`<h2>${esc(m.descripcion)}</h2><p>${eur(m.monto)} · ${esc(m.categoria)} · ${esc(m.ambito)}${m.personas?' · con '+esc(m.personas):''}<br>${esc(m.fecha)}${m.fecha_aprox==='Sí'?' (fecha aproximada)':''}${m.reembolso?'<br>Reembolso: '+esc(m.reembolso):''}</p><div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="secondary" id="sEdit">Editar</button><button class="primary danger" id="sDel">Eliminar</button></div>${m.reembolso==='A reembolsar'&&reembOk()?'<div class="btns"><button class="primary" id="sRe">Marcar como reembolsado</button></div>':''}`);
+    $('#sNo').onclick=closeSheet; if($('#sRe')) $('#sRe').onclick=()=>{closeSheet(); marcarReembolsado(m)};
+    $('#sEdit').onclick=()=>{closeSheet(); Object.assign(st,{tipo:m.tipo,ambito:m.ambito,amount:String(m.monto).replace('.',','),desc:m.descripcion,cat:m.categoria,catAuto:false,people:new Set(String(m.personas||'').split(',').map(x=>x.trim()).filter(Boolean)),dismissed:new Set(),fecha:m.fecha,extraPeople:[],editId:m.id,reemb:m.reembolso||'',reembOrig:m.reembolso||''}); $('#desc').value=m.descripcion; tab('add'); renderAdd()}; $('#sDel').onclick=()=>{closeSheet();removeMov(m.id);toast('Movimiento eliminado')};
   });
 }
 
