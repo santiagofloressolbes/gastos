@@ -133,7 +133,7 @@ main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 #dock{flex:none;position:relative;padding:0.5rem 24px 0.25rem;background:var(--bg)}
 .primary{width:100%;min-height:3.5rem;border-radius:1.125rem;background:var(--act-bg);color:var(--act-fg);font-weight:700;font-size:1.0625rem}
 .primary:disabled{background:var(--dis-bg);color:var(--dis-fg);box-shadow:inset 0 0 0 1.5px var(--dis-line);cursor:not-allowed}
-#app.typing .pad,#app.typing .tabs,#app.typing #peopleBox{display:none}
+#app.typing .pad,#app.typing .tabs,#app.typing #peopleBox,#app.typing #ambSeg,#app.typing #bk{display:none}
 /* tarjetas */
 .card{background:var(--card);color:var(--cink);border-radius:1.5rem;padding:1.5rem 1.25rem;margin-top:1rem}
 .card h2{font:700 1.0625rem var(--sans);margin:0 0 0.25rem}
@@ -196,8 +196,19 @@ svg g[data-ym]{outline:none} svg g[data-ym]:focus-visible rect{stroke:var(--focu
 .vacio h3{font:700 1.0625rem/1.3 var(--sans);margin:.25rem 0 0;color:var(--cink)}
 .vacio p{margin:0;font-size:.875rem;color:var(--cmuted)}
 .vacio .chip{margin-top:.75rem}
+/* aviso mensual de copia */
+.bk{display:flex;flex-direction:column;gap:.5rem;margin:.5rem 0 .25rem;padding:.75rem .875rem;border-radius:1.5rem;background:var(--card);color:var(--cink);border:1.5px solid var(--line)}
+.bk .bkt{display:flex;flex-direction:column;line-height:1.3}
+.bk b{font-size:.9375rem;font-weight:700}
+.bk span{font-size:.8125rem;color:var(--cmuted)}
+.bk .bkb{display:flex;flex-wrap:wrap;gap:.5rem}
+.bk button{flex:1 1 auto;min-height:2.75rem;padding:0 1rem;border-radius:99px;font-size:.9375rem;font-weight:600}
+.bk #bkOk{background:var(--act-bg);color:var(--act-fg)}
+.bk #bkLater{background:var(--inp);color:var(--cink);box-shadow:inset 0 0 0 1.5px var(--line)}
+.bkrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem .75rem;margin-top:1.5rem;font-size:.8125rem;color:var(--cmuted)}
+.chip:disabled{background:var(--dis-bg);color:var(--dis-fg);border-color:var(--dis-line);cursor:default}
 /* cambio de tema suave */
-body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc,.primary,.secondary,.mov,#dock,#sheet,.amount .cur{transition:background-color .35s,color .35s,border-color .35s}
+body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc,.primary,.secondary,.mov,.bk,.bk button,#dock,#sheet,.amount .cur{transition:background-color .35s,color .35s,border-color .35s}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important} .syncbtn.spin svg{animation:none}}
 </style>
 </head>
@@ -208,6 +219,10 @@ body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc
   <header><h1 id="title">Registrar</h1><button class="syncbtn" id="sync" type="button" aria-label="Sincronizar ahora"><span class="vis"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span class="st"><b id="syncL">Sin configurar</b><small id="syncN"></small></span><i class="dot" aria-hidden="true"></i></span></button></header>
   <button id="upd" hidden>Hay una versión nueva · <b>Actualizar</b></button>
   <main id="main">
+    <div id="bk" class="bk" role="status" hidden>
+      <div class="bkt"><b id="bkT">Toca la copia mensual de tu hoja</b><span id="bkP"></span></div>
+      <div class="bkb"><button id="bkOk" aria-label="Ya la hice: guardar la fecha de hoy como última copia">Ya la hice</button><button id="bkLater" aria-label="Recordar mañana: ocultar el aviso hasta mañana">Recordar mañana</button></div>
+    </div>
     <section class="view on" id="v-add" aria-label="Registrar movimiento">
       <div class="seg" id="ambSeg" role="group" aria-label="Ámbito"></div>
       <div class="row2"><div class="seg" id="tipoSeg" role="group" aria-label="Tipo"><button data-v="Gasto" class="on" aria-pressed="true">Gasto</button><button data-v="Ingreso" aria-pressed="false">Ingreso</button></div><label class="chip dateBtn" id="dateBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M8 3v4M16 3v4"/></svg><span id="dateTxt">Hoy</span><input type="date" id="dateIn" aria-label="Cambiar fecha"></label><button class="chip" id="yBtn" aria-pressed="false">Ayer</button></div>
@@ -254,8 +269,37 @@ function fitText(){
 let sayT=null, sayBuf=[];
 function say(msg){
   sayBuf.push(msg); clearTimeout(sayT);
-  sayT=setTimeout(()=>{const t=sayBuf.join('. '); sayBuf=[]; const r=$('#sr'); r.textContent=''; setTimeout(()=>{r.textContent=t},40)},250);   // los avisos casi simultáneos se leen juntos
+  sayT=setTimeout(()=>{const t=sayBuf.map(m=>m.replace(/[.\s]+$/,'')).join('. '); sayBuf=[]; const r=$('#sr'); r.textContent=''; setTimeout(()=>{r.textContent=t},40)},250);   // los avisos casi simultáneos se leen juntos
 }
+
+/* ---------- aviso mensual de copia del Sheet (la fecha vive solo en este móvil) ---------- */
+const BK_INICIAL='2026-10-18', BK_DESDE=27, BK_HASTA=34;
+const fechaOk=v=>{
+  if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y,m,d]=v.split('-').map(Number), t=new Date(Date.UTC(y,m-1,d));
+  return t.getUTCFullYear()===y&&t.getUTCMonth()===m-1&&t.getUTCDate()===d;
+};
+const fechaLarga=v=>{const [y,m,d]=v.split('-').map(Number); return `${d} de ${MES[m-1]} de ${y}`};
+function ultimaCopia(){const v=LS.get('bk',null); return fechaOk(v)&&v<=todayStr()?v:BK_INICIAL}   // guardada corrupta o futura: se ignora
+function diasCopia(){   // días de calendario con la fecha local, sin horas ni UTC
+  const a=ultimaCopia().split('-').map(Number), b=todayStr().split('-').map(Number);
+  return Math.round((Date.UTC(b[0],b[1]-1,b[2])-Date.UTC(a[0],a[1]-1,a[2]))/864e5);
+}
+let bkDicho='';
+function renderCopia(){
+  const n=diasCopia(), on=($('.view.on')||{}).id;
+  const ver=!!cfg&&(on==='v-sum'||on==='v-his')&&n>=BK_DESDE&&n<=BK_HASTA&&LS.get('bksnz',null)!==todayStr();
+  $('#bk').hidden=!ver; if(!ver) return;
+  const frase=`Hace ${n} ${n===1?'día':'días'} de la última copia.`;
+  $('#bkP').textContent=frase;
+  const k=ultimaCopia()+'|'+todayStr(); if(k!==bkDicho){bkDicho=k; say('Toca la copia mensual de tu hoja. '+frase)}   // role="status" no siempre avisa al mostrarse
+}
+function initCopia(){
+  const dejar=()=>{const f=$('.view.on button.on')||$('#cfgBtn'); if(f) f.focus({preventScroll:true})};   // el botón pulsado desaparece: el foco pasa a un control de la pantalla
+  $('#bkOk').onclick=()=>{LS.set('bk',todayStr()); LS.set('bksnz',null); renderCopia(); say('Copia anotada. Aviso oculto.'); dejar()};
+  $('#bkLater').onclick=()=>{LS.set('bksnz',todayStr()); renderCopia(); say('Aviso oculto hasta mañana.'); dejar()};
+}
+const bkRowHtml=()=>{const hoy=ultimaCopia()===todayStr(); return `<div class="bkrow"><span id="bkLine">Última copia del Sheet: ${fechaLarga(ultimaCopia())}</span><button class="chip" id="sBk"${hoy?' disabled':''}>${hoy?'Hecha hoy':'Ya la hice hoy'}</button></div>`};
 
 const DEFAULT_CATS=[
  ...['Renta','Supermercado','Salidas','Transporte','Teléfono/Internet','Suscripciones','Viajes y Ocio','Salud y Cuidado','Ropa','Hogar','Regalos','Comidas de trabajo','Otros'].map(n=>({nombre:n,tipo:'Gasto',ambito:'Personal'})),
@@ -613,8 +657,10 @@ function openSettings(first){
   <label for="ck">Clave</label><input id="ck" type="password" autocapitalize="off" autocorrect="off" value="${esc(cfg?.key||'')}" placeholder="La misma que en el código">
   <div id="cerr" class="err" hidden></div>
   <div class="btns"><button class="secondary" id="sNo">${first===true?'Más tarde':'Cerrar'}</button><button class="primary" id="sOk">Conectar</button></div>
+  ${first===true?'':bkRowHtml()}
   ${first===true?'':'<div class="btns"><button class="secondary" id="sReset" style="width:100%;min-height:46px">Borrar datos de este móvil</button></div>'}`);
   if($('#sNo')) $('#sNo').onclick=closeSheet;
+  if($('#sBk')) $('#sBk').onclick=()=>{LS.set('bk',todayStr()); LS.set('bksnz',null); $('#bkLine').textContent='Última copia del Sheet: '+fechaLarga(todayStr()); $('#sBk').disabled=true; $('#sBk').textContent='Hecha hoy'; renderCopia(); say('Copia anotada: hoy')};
   if($('#sReset')) $('#sReset').onclick=()=>{if(confirm('Se borra la copia local y los movimientos sin sincronizar. ¿Seguir?')){localStorage.clear();location.reload()}};
   $('#sOk').onclick=async()=>{
     const url=$('#cu').value.trim(), key=$('#ck').value.trim(), er=$('#cerr'); er.hidden=true;
@@ -651,17 +697,17 @@ function tab(t){
   if(t!=='add'&&st.editId&&!(t==='his'&&!$('#v-add').classList.contains('on'))) resetForm();
   $$('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+t));
   $('#dock').hidden=t!=='add'; (t==='add'?$('#dock'):$('#navwrap')).appendChild($('#toast'));   // el aviso queda siempre encima de Guardar (o de la barra)
-  applyTheme();
+  applyTheme(); renderCopia();
   $$('.tabs button').forEach(b=>b.toggleAttribute('aria-current',b.dataset.tab===t)); $$('.tabs button').forEach(b=>{if(b.dataset.tab===t) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current')});
   $('#title').textContent=TITLES[t]; $('#main').scrollTop=0; LS.set('tab',t);
   if(t==='sum') renderSum(); if(t==='his') renderHis();
 }
-function renderAll(){ renderAdd(); const t=LS.get('tab','add'); if(t==='sum') renderSum(); if(t==='his') renderHis(); renderPill() }
+function renderAll(){ renderAdd(); const t=LS.get('tab','add'); if(t==='sum') renderSum(); if(t==='his') renderHis(); renderPill(); renderCopia() }
 $$('.tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 $('#sync').onclick=()=>{if(!cfg) openSettings(true); else if(rejected.length) showRejected(); else if(!syncing) sync(true)};
 window.addEventListener('online',()=>sync()); window.addEventListener('offline',()=>{setPill('off')});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){ sync(); renderPill() }});
-setInterval(renderPill,30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){ sync(); renderPill(); renderCopia() }});
+setInterval(()=>{renderPill(); renderCopia()},30000);
 
 if(window.visualViewport){
   const vv=visualViewport, fit=()=>{const kb=innerHeight-vv.height, on=kb>120&&vv.scale<1.05; $('#app').style.height=on?vv.height+'px':''; if(on){window.scrollTo(0,0); setTimeout(fitTyping,0)}};
@@ -673,7 +719,7 @@ if(window.visualViewport){
   const h=new URLSearchParams(location.hash.slice(1));
   if(h.get('u')&&h.get('k')){cfg={url:h.get('u'),key:h.get('k')};LS.set('cfg',cfg);history.replaceState(null,'',location.pathname)}
   fitText(); window.addEventListener('resize',fitText); document.addEventListener('visibilitychange',()=>{if(!document.hidden) fitText()});
-  initAdd(); renderAdd(); tab('add'); renderPill();
+  initAdd(); initCopia(); renderAdd(); tab('add'); renderPill();
   if(cfg){ sync() } else { openSettings(true) }
   if('serviceWorker' in navigator){
     // Si ya había una versión controlando la app y llega otra nueva, avisa (sin recargar solo, por si estás escribiendo).
