@@ -234,6 +234,22 @@ svg g[data-ym]{outline:none} svg g[data-ym]:focus-visible rect{stroke:var(--focu
 .sp{min-height:0;overflow:hidden;padding:0 1.25rem;visibility:hidden;transition:visibility 0s .2s}   /* cerrada: no se puede enfocar ni leer */
 .sec[data-open=true] .sp{visibility:visible;transition-delay:0s}
 .sp-in{padding:.25rem 0 1.5rem}
+/* deuda: pagos */
+.sec-foot{padding:0 1.25rem 1.25rem}
+.sec-foot .primary{min-height:3rem}
+.ph{font:700 .9375rem var(--sans);margin:1.25rem 0 .25rem}
+.pagos{list-style:none;margin:0;padding:0}
+.pago{display:flex;align-items:center;gap:.75rem;padding:.5rem 0;border-top:1px solid var(--line)}
+.pago:first-child{border-top:0}
+.pg{flex:1;min-width:0}
+.pg b{font-variant-numeric:tabular-nums}
+.pg span{display:block;font-size:.8125rem;color:var(--cmuted);overflow-wrap:anywhere}
+.pg .tag{display:inline-block;margin-top:.25rem}
+.delp{flex:none;min-width:2.75rem;min-height:2.75rem;display:flex;align-items:center;justify-content:center;border-radius:.875rem;color:var(--cmuted)}
+.delp svg{width:1.25rem;height:1.25rem;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+#verPagos{margin-top:.5rem}
+#sheet .aviso{font-size:.875rem;color:var(--cink);background:var(--inp);border-radius:.75rem;padding:.5rem .75rem;margin-top:.5rem}
+#sheet .cnt{font-size:.8125rem;color:var(--cmuted);text-align:right;margin-top:.25rem}
 /* cambio de tema suave */
 body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc,.primary,.secondary,.mov,.bk,.bk button,#dock,#sheet,.amount .cur{transition:background-color .35s,color .35s,border-color .35s}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important} .syncbtn.spin svg{animation:none}}
@@ -341,7 +357,8 @@ const LALIGA_GASTO=['Comidas de trabajo','Transporte','Viajes y Ocio','Otros'];
 let cfg=LS.get('cfg',null);
 let db=LS.get('db',{movimientos:[],categorias:[],personas:[],deuda:[]});
 let queue=LS.get('queue',[]), delQ=LS.get('delq',[]);
-const persist=()=>{LS.set('db',db);LS.set('queue',queue);LS.set('delq',delQ)};
+let dq=LS.get('dq',[]), ddq=LS.get('ddq',[]);   // pagos de la deuda por enviar / por borrar (cola aparte de los movimientos)
+const persist=()=>{LS.set('db',db);LS.set('queue',queue);LS.set('delq',delQ);LS.set('dq',dq);LS.set('ddq',ddq)};
 
 /* ---------- red ---------- */
 // Cualquier fallo se reduce a un código interno; el texto crudo del error nunca llega a la pantalla.
@@ -370,7 +387,7 @@ function ago(t){
   const h=Math.floor(m/60); return h<24?`hace ${h} h`:`hace ${Math.floor(h/24)} d`;
 }
 function renderPill(){
-  const b=$('#sync'), n=queue.length+delQ.length, k=syncState.k, off=!navigator.onLine||k==='off', nr=rejected.length;
+  const b=$('#sync'), n=queue.length+delQ.length+dq.length+ddq.length, k=syncState.k, off=!navigator.onLine||k==='off', nr=rejected.length;
   let label, cls='', note=`Última vez: ${ago(lastSync)}`, full='';
   if(!cfg){label='Sin configurar'; cls='wait'; note='Toca para conectar'}
   else {
@@ -382,7 +399,8 @@ function renderPill(){
     if(k==='retry'&&!off){note='Reintentando…'; full='No se pudo sincronizar, reintentando…'; cls='wait'}
     else if(k==='fail'&&!off){note='Toca para reintentar'; full='No se pudo sincronizar. Toca para reintentar.'; cls='err'}
     else if(k==='stop'){note=STOP_SHORT[syncState.code]||'No se pudo sincronizar'; full=STOP_MSG[syncState.code]||note; cls='err'}
-    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=rejected.every(r=>r.motivo==='reembolso')?`${nr} reembolso${pl} sin guardar`:`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
+    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=rejected.every(r=>r.motivo==='reembolso')?`${nr} reembolso${pl} sin guardar`:rejected.every(r=>r.motivo==='deuda')?`${nr} pago${pl} no válido${pl}`:`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
+    else if(k==='ok'&&!deudaOk()&&(dq.length||ddq.length)){const pn=dq.length+ddq.length; note=`${pn} pago${pn>1?'s':''} sin enviar`; full=note+': el script no admite pagos de la deuda todavía. Actualízalo.'; cls='err'}
   }
   // Compacto (solo icono y puntito) 3 s después de quedar todo sincronizado; se expande en cuanto hay algo que decir.
   const calm=!!cfg&&k==='ok'&&!n&&!nr&&!off;
@@ -395,10 +413,12 @@ function renderPill(){
   const estable=(k==='ok'&&!n&&!off)||off||k==='retry'||k==='fail'||k==='stop';   // no se anuncian los estados de paso (p. ej. el "Pendiente" justo antes de sincronizar)
   if(cfg&&k!=='idle'&&estable&&key!==lastSay){lastSay=key; say(label+(full?'. '+full:''))}
 }
-const reembOk=()=>!!caps&&caps.reembolso===true;   // el script avisa de que entiende el campo "reembolso"
+const reembOk=()=>!!caps&&caps.reembolso===true;
+const deudaOk=()=>!!caps&&caps.deuda===true;       // el script avisa de que sabe escribir pagos de la deuda   // el script avisa de que entiende el campo "reembolso"
 function showRejected(){
-  const solo=rejected.length>0&&rejected.every(m=>m.motivo==='reembolso');
-  openSheet(`<h2>${solo?'Reembolsos sin guardar':'Movimientos no válidos'}</h2><p>${solo?'El script no guardó la marca de reembolso de estos movimientos: están en la hoja, pero sin marca. Actualiza el script y vuelve a marcarlos desde Editar.':'No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.'}</p>${rejected.map(m=>`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}${m.motivo==='reembolso'?' · '+esc(m.reembolso):''}</p>`).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
+  const solo=rejected.length>0&&rejected.every(m=>m.motivo==='reembolso'), pagos=rejected.length>0&&rejected.every(m=>m.motivo==='deuda');
+  const fila=m=>m.motivo==='deuda'?`<p><b>Pago de ${esc(m.monto_eur)} €</b><br>${esc(m.fecha)}${m.nota?' · '+esc(m.nota):''}</p>`:`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}${m.motivo==='reembolso'?' · '+esc(m.reembolso):''}</p>`;
+  openSheet(`<h2>${solo?'Reembolsos sin guardar':pagos?'Pagos no válidos':'Movimientos no válidos'}</h2><p>${solo?'El script no guardó la marca de reembolso de estos movimientos: están en la hoja, pero sin marca. Actualiza el script y vuelve a marcarlos desde Editar.':'No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.'}</p>${rejected.map(fila).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
   $('#sNo').onclick=()=>{closeSheet();sync(true)};
   $('#sDel').onclick=()=>{rejected=[];LS.set('rejected',rejected);closeSheet();sync(true)};
 }
@@ -410,12 +430,17 @@ async function run(force){
   if(halt&&!force){ if(halt.code==='bloqueado'&&Date.now()>halt.until) halt=null; else return }   // no insistir con una clave mala
   if(!navigator.onLine&&!force){setPill('off');return}
   syncing=true; again=false; setPill('sync');
-  let ok=false, code='red', apartados=0, malTag=0; const tagged=[];
+  let ok=false, code='red', apartados=0, apartadosD=0, malTag=0, dSaltado=false; const tagged=[];
   // Un envío aceptado: si se deshizo mientras viajaba, ya está en el Sheet y se manda a borrar.
   const enviado=items=>{
     for(const b of items) if(!queue.some(x=>x.id===b.id)) delQ.push(b.id);
     for(const b of items) if(b.reembolso) tagged.push(b);
     queue=queue.filter(x=>!items.some(b=>b.id===x.id)); persist();
+  };
+  // Pagos de la deuda: igual que arriba (si se deshizo mientras viajaba, ya está en el Sheet y se manda a borrar).
+  const enviadoD=items=>{
+    for(const b of items) if(!dq.some(x=>x.id===b.id)) ddq.push(b.id);
+    dq=dq.filter(x=>!items.some(b=>b.id===x.id)); persist();
   };
   try{
     while(delQ.length){ const id=delQ[0]; await api({action:'delete',id}); delQ=delQ.filter(x=>x!==id); persist() }   // ok aunque la fila ya no exista
@@ -434,10 +459,28 @@ async function run(force){
         }
       }
     }
-    const d=await api({action:'data'}), dels=new Set(delQ.map(String));
-    db={movimientos:(d.movimientos||[]).filter(m=>!dels.has(String(m.id))),categorias:d.categorias||[],personas:d.personas||[],deuda:d.deuda||[]};
+    if(deudaOk()){
+      while(ddq.length){ const id=ddq[0]; await api({action:'debtDelete',id}); ddq=ddq.filter(x=>x!==id); persist() }   // ok aunque la fila ya no exista
+      while(dq.length){
+        const batch=dq.slice(0,200);
+        try{ await api({action:'debtAdd',items:batch}); enviadoD(batch) }
+        catch(e){
+          if(e.code!=='datos') throw e;
+          for(const it of batch){   // un pago inválido en el lote: de uno en uno (el mismo id no se duplica) y solo se aparta el malo
+            try{ await api({action:'debtAdd',items:[it]}); enviadoD([it]) }
+            catch(e2){
+              if(e2.code!=='datos') throw e2;
+              if(dq.some(x=>x.id===it.id)){ dq=dq.filter(x=>x.id!==it.id); rejected.push({...it,motivo:'deuda'}); LS.set('rejected',rejected); persist(); apartadosD++ }
+            }
+          }
+        }
+      }
+    } else dSaltado=dq.length>0||ddq.length>0;   // script antiguo (o aún sin saber): no se envía nada, la cola espera
+    const d=await api({action:'data'}), dels=new Set(delQ.map(String)), ddels=new Set(ddq.map(String));
+    db={movimientos:(d.movimientos||[]).filter(m=>!dels.has(String(m.id))),categorias:d.categorias||[],personas:d.personas||[],deuda:(d.deuda||[]).filter(x=>!ddels.has(String(x.id)))};
     for(const q of queue) if(!db.movimientos.some(m=>m.id===q.id)) db.movimientos.push(q);
-    caps={reembolso:d.reembolso===true}; LS.set('caps',caps);   // sin el flag la fila de reembolso se oculta y no se envía nada
+    for(const q of dq) if(!db.deuda.some(x=>String(x.id)===q.id)) db.deuda.push(q);
+    caps={reembolso:d.reembolso===true,deuda:d.deudaEscritura===true}; if(dSaltado&&caps.deuda) again=true;   // el script ya los admite: se envían en la pasada siguiente LS.set('caps',caps);   // sin el flag la fila de reembolso se oculta y no se envía nada
     // Comprobación acotada (no lanza ni frena nada): si un movimiento enviado con marca vuelve sin ella, el script no la guardó.
     if(tagged.length){ try{
       const por=new Map((d.movimientos||[]).map(m=>[String(m.id),m]));
@@ -449,12 +492,13 @@ async function run(force){
   finally{ syncing=false }
   if(ok){ attempt=0; halt=null; lastSync=Date.now(); LS.set('lastsync',lastSync); setPill('ok'); renderAll();
     if(malTag) toast(`El script no guardó el reembolso de ${malTag>1?malTag+' movimientos':'un movimiento'}. Toca el indicador para verlo.`);
-    if(apartados) toast(`${apartados>1?apartados+' movimientos no se han':'Un movimiento no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`) }
+    if(apartados) toast(`${apartados>1?apartados+' movimientos no se han':'Un movimiento no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`);
+    if(apartadosD) toast(`${apartadosD>1?apartadosD+' pagos no se han':'Un pago no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`) }
   else if(STOP_CODES.includes(code)){ halt={code,until:Date.now()+15*60000}; setPill('stop',code) }
   else if(!navigator.onLine) setPill('off');
   else if(attempt<RETRY.length){ setPill('retry'); retryT=setTimeout(()=>{retryT=null;attempt++;run()},RETRY[attempt]) }
   else setPill('fail');
-  if(again){again=false; if(queue.length||delQ.length) sync()}   // se guardó algo mientras sincronizaba
+  if(again){again=false; if(queue.length||delQ.length||dq.length||ddq.length) sync()}   // se guardó algo mientras sincronizaba
 }
 
 /* ---------- datos derivados ---------- */
@@ -656,11 +700,78 @@ function resumenCalc(movs,o){
 const SEC_DEF={cat:true,tend:false,quien:false,deuda:false};
 const secOpen=(()=>{const s=LS.get('sec',{})||{}, o={...SEC_DEF}; for(const k in SEC_DEF) if(typeof s[k]==='boolean') o[k]=s[k]; return o})();
 const CHEV='<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
-const secHtml=(id,title,summary,body)=>`<section class="card sec" data-sec="${id}" data-open="${secOpen[id]}"><h2 class="sh"><button type="button" id="sb-${id}" aria-expanded="${secOpen[id]}" aria-controls="sp-${id}"><span><span class="stt">${esc(title)}</span><span class="ssum">${esc(summary)}</span></span>${CHEV}</button></h2><div class="spw"><div class="sp" id="sp-${id}" role="region" aria-labelledby="sb-${id}"><div class="sp-in">${body}</div></div></div></section>`;
+const secHtml=(id,title,summary,body,foot='')=>`<section class="card sec" data-sec="${id}" data-open="${secOpen[id]}"><h2 class="sh"><button type="button" id="sb-${id}" aria-expanded="${secOpen[id]}" aria-controls="sp-${id}"><span><span class="stt">${esc(title)}</span><span class="ssum">${esc(summary)}</span></span>${CHEV}</button></h2><div class="spw"><div class="sp" id="sp-${id}" role="region" aria-labelledby="sb-${id}"><div class="sp-in">${body}</div></div></div>${foot}</section>`;
+
+/* ---------- deuda: saldo, pagos y formulario ---------- */
+const esPagado=d=>String(d.tipo||'').trim().toLowerCase()==='pagado';   // el script escribe «Pagado»; se compara sin mirar mayúsculas
+function deudaCalc(rows){
+  const num=d=>Number(d.monto_eur)||0, pag=rows.filter(esPagado), rec=rows.filter(d=>!esPagado(d));   // todo lo que no es «Pagado» suma como recibido (como hasta ahora)
+  const recibido=sumBy(rec,num), pagado=sumBy(pag,num);
+  const ultima=rec.filter(d=>String(d.tipo||'').trim().toLowerCase()==='recibido').sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)))[0];
+  const pagos=pag.slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  return {recibido,pagado,saldo:r2(recibido-pagado),ultima,pagos};
+}
+const fechaCorta=f=>{const [y,m,d]=String(f).slice(0,10).split('-'); return MESC[m-1]?`${+d} ${MESC[m-1]} ${y}`:String(f)};
+function parseMonto(txt){   // «12,5», «12.50» o «1.200,50»; devuelve un número o un texto con el motivo
+  let t=String(txt).trim().replace(/\s/g,'').replace(/€/g,''); if(!t) return 'Escribe el monto.';
+  if(t.includes(',')) t=t.replace(/\./g,'').replace(',','.');
+  if(!/^\d+(\.\d+)?$/.test(t)) return 'Escribe solo números, por ejemplo 150 o 150,50.';
+  if(/\.\d{3,}$/.test(t)) return 'Usa como máximo 2 decimales.';
+  const n=Math.round(parseFloat(t)*100)/100;
+  if(!(n>0)) return 'El monto tiene que ser mayor que 0.';
+  if(n>1e7) return 'Ese monto es demasiado grande.';
+  return n;
+}
+function addPago(item){ dq.push(item); db.deuda.push(item); persist() }
+function removePago(id){
+  const q=dq.findIndex(x=>x.id===id);
+  if(q>=0) dq.splice(q,1); else if(String(id).startsWith('d-')&&!ddq.includes(id)) ddq.push(id);   // en cola: se quita sin molestar al script; ya enviado: se manda a borrar
+  db.deuda=db.deuda.filter(x=>String(x.id)!==id); persist(); renderAll(); sync();
+}
+const puedeBorrarPago=p=>!!p.id&&(dq.some(x=>x.id===p.id)||(deudaOk()&&String(p.id).startsWith('d-')));
+const foco=sel=>setTimeout(()=>{const b=$(sel); if(b) b.focus({preventScroll:true})},60);
+function abrirPago(){
+  if(!deudaOk()) return;
+  const hoy=todayStr();
+  openSheet(`<h2>Registrar pago</h2><p>Pago a tus padres. No cuenta como gasto.</p>
+  <label for="pgm">Monto (€)</label><input id="pgm" inputmode="decimal" autocomplete="off" autocapitalize="off" placeholder="0,00">
+  <div id="pgw" class="aviso" role="status" hidden></div>
+  <label for="pgd">Fecha</label><input id="pgd" type="date" value="${hoy}" max="${hoy}">
+  <label for="pgn">Nota (opcional)</label><input id="pgn" maxlength="100" autocomplete="off" autocapitalize="sentences" aria-describedby="pgc">
+  <div class="cnt" id="pgc">0 de 100</div>
+  <div id="pge" class="err" role="alert" hidden></div>
+  <div class="btns"><button class="secondary" id="sNo">Cancelar</button><button class="primary" id="sOk">Guardar pago</button></div>`);
+  const err=m=>{const e=$('#pge'); e.textContent=m||''; e.hidden=!m};
+  $('#sNo').onclick=()=>{closeSheet(); foco('#btnPago')};
+  $('#pgm').oninput=()=>{
+    const m=parseMonto($('#pgm').value), saldo=deudaCalc(db.deuda).saldo, w=$('#pgw');
+    if(typeof m==='number'&&m>saldo+0.004){ w.textContent=saldo>0?`Es más que el saldo actual (${eur(saldo)}). Puedes guardarlo igualmente.`:'Ya no queda saldo pendiente. Puedes guardarlo igualmente: se anotará como pagado de más.'; w.hidden=false }
+    else w.hidden=true;
+  };
+  $('#pgn').oninput=()=>{$('#pgc').textContent=`${[...$('#pgn').value].length} de 100`};
+  $('#sOk').onclick=()=>{
+    const m=parseMonto($('#pgm').value); if(typeof m!=='number'){err(m); $('#pgm').focus(); return}
+    const f=$('#pgd').value; if(!fechaOk(f)){err('Elige una fecha.'); $('#pgd').focus(); return}
+    if(f>todayStr()){err('La fecha no puede ser futura.'); $('#pgd').focus(); return}
+    $('#sOk').disabled=true;   // un solo toque, un solo pago
+    const item={id:'d-'+uid(),fecha:f,tipo:'Pagado',monto_eur:m,nota:[...$('#pgn').value.trim()].slice(0,100).join('')};
+    addPago(item); closeSheet(); renderAll(); foco('#btnPago');
+    setTimeout(()=>toast(`Pago guardado · ${eur(m)}`,()=>{removePago(item.id)}),400);   // un segundo toque rápido en Guardar no debe caer en «Deshacer»
+    sync();
+  };
+}
+function borrarPago(id){
+  const p=db.deuda.find(x=>String(x.id)===id); if(!p||!puedeBorrarPago(p)) return;
+  openSheet(`<h2>¿Borrar este pago?</h2><p><b>${esc(eur(Number(p.monto_eur)||0))}</b> · ${esc(fechaCorta(p.fecha))}${p.nota?'<br>'+esc(p.nota):''}</p><p>El saldo de la deuda subirá de nuevo.</p>
+  <div class="btns"><button class="secondary" id="sNo">Cancelar</button><button class="primary danger" id="sOk">Borrar pago</button></div>`);
+  $('#sNo').onclick=closeSheet;
+  $('#sOk').onclick=()=>{$('#sOk').disabled=true; closeSheet(); removePago(id); foco('#sb-deuda'); toast('Pago borrado')};
+}
 
 function renderSum(){
   applyTheme();
   const v=$('#v-sum'), cur=todayStr().slice(0,7), hoy=todayStr();
+  const fid=(document.activeElement&&v.contains(document.activeElement))?document.activeElement.id:'';   // el foco no se pierde si la pantalla se repinta (p. ej. al terminar de sincronizar)
   if(!cfg||sinCargar()){ v.innerHTML=`<div class="card">${!cfg?emptyConn():emptyBlock('cloud','Sin datos todavía','Se cargarán al recuperar la conexión.',{act:'retry',label:'Reintentar'})}</div>`; return }
   const R=resumenCalc(db.movimientos,{scope:sum.scope,ym:sum.ym,period:sum.period,hoy}), {gm,periodMovs,gasto,ingresos,balance,pend,pendT,cmp}=R;
   const enMes=sum.period==='mes';
@@ -685,7 +796,7 @@ function renderSum(){
   const emptyCat=emptyBlock('chart',`Sin gastos${sum.scope!=='Todo'?' en '+sum.scope:''} ${enMes?'en '+mesTxt:'en los últimos 12 meses'}`,'Prueba con otro mes o registra uno nuevo.',{act:'reg',amb:sum.scope!=='Todo'?sum.scope:'',label:sum.scope!=='Todo'?'Registrar en '+sum.scope:'Registrar un gasto'});
   const emptyP=emptyBlock('people','Aún no hay gastos con otras personas','Al registrar un gasto, elige con quién fue y verás aquí el ranking.');
   // deuda (solo Personal)
-  const dsaldo=db.deuda.reduce((a,d)=>a+(d.tipo==='Pagado'?-d.monto_eur:d.monto_eur),0), dlast=db.deuda.filter(d=>d.tipo==='Recibido').sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
+  const D=deudaCalc(db.deuda), dEsc=deudaOk();
 
   // tarjeta de indicadores
   let delta='';
@@ -708,8 +819,15 @@ function renderSum(){
     <svg viewBox="0 0 ${W} ${H}" width="100%" role="group" aria-label="Gasto de los 12 meses hasta ${MES[+sum.ym.slice(5)-1]} de ${sum.ym.slice(0,4)}. Toca un mes para verlo.">${bars}</svg>${mesesConDatos===1?'<p class="note">Con más meses verás la evolución.</p>':''}`:emptyBlock('chart','Aún no hay gastos que comparar','Con un par de meses de gastos verás aquí cómo evolucionan.')}`);
   const secQuien=sum.scope==='Personal'?secHtml('quien','Con quién',pRows.length?`${pRows[0][0]} · ${eur0(pRows[0][1].t)}`:'Sin gastos con otras personas',
     `<p class="sub">${enMes?ymLabel(sum.ym):'Últimos 12 meses'} · gasto en planes donde apareció cada persona</p>${pRows.length?pRows.map(([p,o])=>`<div class="row"><span class="n">${esc(p)}</span><span class="v">${eur0(o.t)}<small>${o.n} ${o.n>1?'veces':'vez'}</small></span><span class="bar"><i style="width:${Math.max(2,o.t/maxP*100)}%"></i></span></div>`).join(''):emptyP}${pRows.length?'<p class="note">Si una cuenta incluye a varias personas, el monto completo cuenta para cada una.</p>':''}`):'';
-  const secDeuda=(sum.scope==='Personal'&&db.deuda.length)?secHtml('deuda','Deuda con tus padres',`Saldo ${eur0(dsaldo)}`,
-    `<div class="big" style="margin-top:6px">${eur0(dsaldo)}</div><p class="sub" style="margin-top:6px">${dlast?`Última ayuda recibida: ${eur0(dlast.monto_eur)} (${+dlast.fecha.slice(8)} ${MESC[+dlast.fecha.slice(5,7)-1]})`:''} · sin intereses ni fecha límite</p>`):'';
+  const pagoHtml=p=>{const m=eur(Number(p.monto_eur)||0), pend=dq.some(x=>x.id===p.id);
+    return `<li class="pago"><div class="pg"><b>${esc(m)}</b><span>${esc(fechaCorta(p.fecha))}${p.nota?' · '+esc(p.nota):''}</span>${pend?'<span class="tag tag-p">Sin enviar</span>':''}</div>${puedeBorrarPago(p)?`<button class="delp" data-id="${esc(p.id)}" aria-label="${esc('Borrar pago de '+m+' del '+fechaCorta(p.fecha))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"/></svg></button>`:''}</li>`};
+  const PAGOS_VISIBLES=10;
+  const secDeuda=(sum.scope==='Personal'&&db.deuda.length)?secHtml('deuda','Deuda con tus padres',D.saldo<0?`Pagado de más ${eur0(-D.saldo)}`:`Saldo ${eur0(D.saldo)}`,
+    `<p class="sub" style="margin:0 0 .25rem">${D.saldo<0?'Pagado de más':'Saldo pendiente'}</p><div class="big">${eur0(Math.abs(D.saldo))}</div>
+    <div class="kpis">${kp('Recibido',eur0(D.recibido))}${kp('Pagado',eur0(D.pagado))}</div>
+    <p class="sub" style="margin:1rem 0 0">${D.ultima?`Última ayuda recibida: ${eur0(D.ultima.monto_eur)} (${+String(D.ultima.fecha).slice(8,10)} ${MESC[+String(D.ultima.fecha).slice(5,7)-1]}) · `:''}sin intereses ni fecha límite</p>
+    <h3 class="ph">Pagos</h3>${D.pagos.length?`<ul class="pagos">${D.pagos.map((p,i)=>i<PAGOS_VISIBLES?pagoHtml(p):pagoHtml(p).replace('<li class="pago"','<li class="pago extra" hidden')).join('')}</ul>${D.pagos.length>PAGOS_VISIBLES?`<button class="chip" id="verPagos" aria-expanded="false">Ver todos (${D.pagos.length})</button>`:''}`:emptyBlock('list','Aún no has registrado pagos',dEsc?'':'Para registrarlos desde aquí hace falta sincronizar con el script actualizado.')}${D.pagos.length&&!dEsc?'<p class="note">Para registrar o borrar pagos desde aquí hace falta sincronizar con el script actualizado.</p>':''}`,
+    dEsc?`<div class="sec-foot"><button class="primary" id="btnPago" type="button">Registrar pago</button></div>`:''):'';
 
   v.innerHTML=`
   <div class="seg" id="scopeSeg" role="group" aria-label="Ámbito">${['Personal','Sporture','LaLiga','Todo'].map(s=>`<button data-v="${s}" class="${s===sum.scope?'on':''}" aria-pressed="${s===sum.scope}">${s}</button>`).join('')}</div>
@@ -725,6 +843,10 @@ function renderSum(){
   v.querySelectorAll('.sh button').forEach(b=>b.onclick=()=>{   // abrir/cerrar sin repintar: el foco se queda donde está
     const s=b.closest('.sec'), id=s.dataset.sec, o=!secOpen[id];
     secOpen[id]=o; s.dataset.open=o; b.setAttribute('aria-expanded',o); LS.set('sec',secOpen)});
+  if(fid){const e=document.getElementById(fid); if(e&&v.contains(e)) e.focus({preventScroll:true})}
+  if($('#btnPago')) $('#btnPago').onclick=abrirPago;
+  v.querySelectorAll('.delp').forEach(b=>b.onclick=()=>borrarPago(b.dataset.id));
+  if($('#verPagos')) $('#verPagos').onclick=e=>{const b=e.currentTarget, abre=b.getAttribute('aria-expanded')!=='true'; v.querySelectorAll('.pago.extra').forEach(li=>li.hidden=!abre); b.setAttribute('aria-expanded',abre); b.textContent=abre?'Ver menos':`Ver todos (${D.pagos.length})`};
   v.querySelectorAll('svg g[data-ym]').forEach(g=>{g.onclick=()=>{sum.ym=g.dataset.ym;renderSum()}; g.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();g.onclick()}}});
   v.querySelectorAll('button.row').forEach(b=>b.onclick=()=>{
     const box=v.querySelector(`.detail[data-for="${CSS.escape(b.dataset.cat)}"]`);
