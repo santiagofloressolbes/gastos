@@ -185,6 +185,8 @@ svg text{font-family:var(--sans)}
 .primary.danger{background:var(--dbg);color:#fff}
 #toast{position:absolute;left:50%;bottom:100%;margin-bottom:0.5rem;transform:translate(-50%,1rem);background:var(--toast-bg);color:var(--toast-fg);padding:0.25rem 0.5rem 0.25rem 1rem;border-radius:1rem;display:flex;align-items:center;gap:0.5rem;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s,visibility 0s .2s,transform .2s,background-color .35s,color .35s;z-index:30;width:max-content;max-width:calc(100vw - 2rem);font-size:0.9375rem;box-shadow:0 0.25rem 1rem rgba(0,0,0,.18)}
 #toast.on{opacity:1;visibility:visible;transition-delay:0s;transform:translate(-50%,0);pointer-events:auto}
+#toastBody{display:flex;flex-direction:column;gap:.125rem;padding:.25rem 0}
+#toastX{font-size:.8125rem}
 #toast button{font-weight:700;min-height:2.75rem;padding:0 0.75rem;border-radius:0.75rem;text-decoration:underline}
 /* tamaño de letra del sistema (iOS): solo la medida base, la fuente sigue siendo Open Sans */
 #fsprobe{position:absolute;left:-9999px;top:0;visibility:hidden;pointer-events:none;font-size:16px;font:-apple-system-body;font-family:var(--sans)}
@@ -264,6 +266,21 @@ svg g[data-ym]{outline:none} svg g[data-ym]:focus-visible rect{stroke:var(--focu
 .mbtn{min-height:2.75rem;padding:0 1rem;border-radius:1rem;font-size:.9375rem;margin-top:.5rem;max-width:100%}
 .mrow .mbtn{flex:1 0 100%}
 #btnSim{margin-top:1rem;width:100%}
+/* presupuestos */
+.pres{display:block;padding:.75rem 0}
+.pres+.pres{border-top:1px solid var(--line)}
+.pbtn{width:100%;text-align:left;min-height:2.75rem}
+.pres .pn{display:flex;justify-content:space-between;align-items:baseline;gap:.75rem}
+.pres .n{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.pres .v{font:600 .9375rem var(--sans);font-variant-numeric:tabular-nums;text-align:right}
+.pres .v.neg,.pres .ms.neg{color:var(--cbad)}
+.pres .v small,.pres .n small{color:var(--cmuted);font-weight:400;margin-left:.5rem}
+.pres .bar{display:block;margin-top:.25rem}
+.pres .bar.over i{background:var(--cbad)}
+.pres .ms{display:block;font-size:.8125rem;color:var(--cmuted);margin-top:.25rem}
+.pres .qb{display:block;margin-top:.75rem}
+.tgl{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem}
+#sheet select{width:100%;max-width:100%;min-height:3rem;border:1.5px solid var(--line);border-radius:.875rem;padding:0 1rem;font-size:1rem}
 /* cambio de tema suave */
 body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc,.primary,.secondary,.mov,.bk,.bk button,#dock,#sheet,.amount .cur{transition:background-color .35s,color .35s,border-color .35s}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important} .syncbtn.spin svg{animation:none}}
@@ -303,7 +320,7 @@ body,header h1,.tabs,.tabs button,.seg,.seg button,.chip,.card,.pad button,.desc
   </nav></div>
 </div>
 <div id="scrim"><div id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div></div>
-<div id="toast"><span id="toastTxt"></span><button id="toastBtn">Deshacer</button></div>
+<div id="toast"><span id="toastBody"><span id="toastTxt"></span><small id="toastX" hidden></small></span><button id="toastBtn">Deshacer</button></div>
 
 <script>
 'use strict';
@@ -359,6 +376,7 @@ function initCopia(){
   $('#bkLater').onclick=()=>{LS.set('bksnz',todayStr()); renderCopia(); say('Aviso oculto hasta mañana.'); dejar()};
 }
 const ahorroRowHtml=()=>{if(!ahorroOk()) return ''; const a=ahorroActual(ahorros(),todayStr()); return `<div class="bkrow"><span>${a?'Ahorro actual: '+esc(eur0(a.monto))+' ('+esc(fechaCorta(a.fecha))+')':'Ahorro: sin registrar'}</span><button class="chip" id="sAh" type="button">Actualizar ahorro</button></div>`};
+const presRowHtml=()=>{if(!presupuestoOk()) return ''; const n=topes().length; return `<div class="bkrow"><span>${n?`Presupuestos: ${n} ${n>1?'topes':'tope'}`:'Presupuestos: sin topes'}</span><button class="chip" id="sPr" type="button">Editar topes</button></div>`};
 const bkRowHtml=()=>{const hoy=ultimaCopia()===todayStr(); return `<div class="bkrow"><span id="bkLine">Última copia del Sheet: ${fechaLarga(ultimaCopia())}</span><button class="chip" id="sBk"${hoy?' disabled':''}>${hoy?'Hecha hoy':'Ya la hice hoy'}</button></div>`};
 
 const DEFAULT_CATS=[
@@ -374,10 +392,13 @@ let db=LS.get('db',{movimientos:[],categorias:[],personas:[],deuda:[]});
 let queue=LS.get('queue',[]), delQ=LS.get('delq',[]);
 let dq=LS.get('dq',[]), ddq=LS.get('ddq',[]);   // pagos de la deuda por enviar / por borrar (cola aparte de los movimientos)
 let aq=LS.get('aq',[]), adq=LS.get('adq',[]);   // fotos del ahorro por enviar / por borrar (otra cola aparte)
+let bq=LS.get('bq',[]), bdq=LS.get('bdq',[]);   // topes de presupuesto por enviar (uno por categoría) / categorías por quitar
 if(!db||typeof db!=='object') db={movimientos:[],categorias:[],personas:[],deuda:[]};
 if(!Array.isArray(db.ahorro)) db.ahorro=[];     // copias locales anteriores no traen la lista
+if(!Array.isArray(db.presupuestos)) db.presupuestos=[];   // ídem con los topes
+if(!Array.isArray(bq)) bq=[]; if(!Array.isArray(bdq)) bdq=[];
 const ahorros=()=>Array.isArray(db.ahorro)?db.ahorro:[];
-const persist=()=>{LS.set('db',db);LS.set('queue',queue);LS.set('delq',delQ);LS.set('dq',dq);LS.set('ddq',ddq);LS.set('aq',aq);LS.set('adq',adq)};
+const persist=()=>{LS.set('db',db);LS.set('queue',queue);LS.set('delq',delQ);LS.set('dq',dq);LS.set('ddq',ddq);LS.set('aq',aq);LS.set('adq',adq);LS.set('bq',bq);LS.set('bdq',bdq)};
 
 /* ---------- red ---------- */
 // Cualquier fallo se reduce a un código interno; el texto crudo del error nunca llega a la pantalla.
@@ -414,10 +435,11 @@ function ago(t){
   if(m<1) return 'hace un momento'; if(m<60) return `hace ${m} min`;
   const h=Math.floor(m/60); return h<24?`hace ${h} h`:`hace ${Math.floor(h/24)} d`;
 }
-const aBloq=()=>ahorroOk()?0:aq.length+adq.length;   // fotos de ahorro que esperan a que el script las admita
+const aBloq=()=>ahorroOk()?0:aq.length+adq.length;
+const bBloq=()=>presupuestoOk()?0:bq.length+bdq.length;   // cambios de topes que esperan a que el script los admita   // fotos de ahorro que esperan a que el script las admita
 const dBloq=()=>dq.filter(x=>!(deudaOk()&&enviableD(x))).length+(deudaOk()?0:ddq.length);   // registros de deuda que esperan a que el script los admita
 function renderPill(){
-  const b=$('#sync'), n=queue.length+delQ.length+dq.length+ddq.length+aq.length+adq.length, k=syncState.k, off=!navigator.onLine||k==='off', nr=rejected.length;
+  const b=$('#sync'), n=queue.length+delQ.length+dq.length+ddq.length+aq.length+adq.length+bq.length+bdq.length, k=syncState.k, off=!navigator.onLine||k==='off', nr=rejected.length;
   let label, cls='', note=`Última vez: ${ago(lastSync)}`, full='';
   if(!cfg){label='Sin configurar'; cls='wait'; note='Toca para conectar'}
   else {
@@ -429,9 +451,10 @@ function renderPill(){
     if(k==='retry'&&!off){note='Reintentando…'; full='No se pudo sincronizar, reintentando…'; cls='wait'}
     else if(k==='fail'&&!off){note='Toca para reintentar'; full='No se pudo sincronizar. Toca para reintentar.'; cls='err'}
     else if(k==='stop'){note=STOP_SHORT[syncState.code]||'No se pudo sincronizar'; full=STOP_MSG[syncState.code]||note; cls='err'}
-    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=rejected.every(r=>r.motivo==='reembolso')?`${nr} reembolso${pl} sin guardar`:rejected.every(r=>r.motivo==='deuda')?`${nr} registro${pl} de deuda no válido${pl}`:rejected.every(r=>r.motivo==='ahorro')?`${nr} registro${pl} de ahorro no válido${pl}`:`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
+    else if(nr&&k!=='sync'){const pl=nr>1?'s':''; note=rejected.every(r=>r.motivo==='reembolso')?`${nr} reembolso${pl} sin guardar`:rejected.every(r=>r.motivo==='deuda')?`${nr} registro${pl} de deuda no válido${pl}`:rejected.every(r=>r.motivo==='ahorro')?`${nr} registro${pl} de ahorro no válido${pl}`:rejected.every(r=>r.motivo==='presupuesto')?`${nr} tope${pl} de presupuesto no válido${pl}`:`${nr} movimiento${pl} no válido${pl}`; full=note+'. Toca para revisar.'; cls='err'}
     else if(k==='ok'&&dBloq()>0){const pn=dBloq(); note=`${pn} registro${pn>1?'s':''} de deuda sin enviar`; full=note+': el script no los admite todavía. Actualízalo.'; cls='err'}
     else if(k==='ok'&&aBloq()>0){const pn=aBloq(); note=`${pn} registro${pn>1?'s':''} de ahorro sin enviar`; full=note+': el script no los admite todavía. Actualízalo.'; cls='err'}
+    else if(k==='ok'&&bBloq()>0){const pn=bBloq(); note=`${pn} cambio${pn>1?'s':''} de presupuesto sin enviar`; full=note+': el script no los admite todavía. Actualízalo.'; cls='err'}
   }
   // Compacto (solo icono y puntito) 3 s después de quedar todo sincronizado; se expande en cuanto hay algo que decir.
   const calm=!!cfg&&k==='ok'&&!n&&!nr&&!off;
@@ -447,12 +470,13 @@ function renderPill(){
 const reembOk=()=>!!caps&&caps.reembolso===true;   // el script avisa de que entiende el campo "reembolso"
 const deudaOk=()=>!!caps&&caps.deuda===true;       // el script avisa de que sabe escribir pagos de la deuda
 const ahorroOk=()=>!!caps&&caps.ahorro===true;     // el script avisa de que sabe guardar el ahorro
+const presupuestoOk=()=>!!caps&&caps.presupuesto===true;   // el script avisa de que sabe guardar los topes de presupuesto
 const recibidoOk=()=>deudaOk()&&caps.recibidos===true;   // ...y también ayudas recibidas
 const enviableD=x=>/^pagado$/i.test(String(x.tipo||'').trim())||recibidoOk();   // un pago sale con deudaEscritura; una ayuda, solo si el script la admite
 function showRejected(){
-  const solo=rejected.length>0&&rejected.every(m=>m.motivo==='reembolso'), pagos=rejected.length>0&&rejected.every(m=>m.motivo==='deuda'), ahor=rejected.length>0&&rejected.every(m=>m.motivo==='ahorro');
-  const fila=m=>m.motivo==='ahorro'?`<p><b>Ahorro de ${esc(m.monto_eur)} €</b><br>${esc(m.fecha)}${m.nota?' · '+esc(m.nota):''}</p>`:m.motivo==='deuda'?`<p><b>${/^pagado$/i.test(String(m.tipo||'').trim())?'Pago':'Ayuda'} de ${esc(m.monto_eur)} €</b><br>${esc(m.fecha)}${m.nota?' · '+esc(m.nota):''}</p>`:`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}${m.motivo==='reembolso'?' · '+esc(m.reembolso):''}</p>`;
-  openSheet(`<h2>${solo?'Reembolsos sin guardar':pagos?'Registros de deuda no válidos':ahor?'Registros de ahorro no válidos':'Movimientos no válidos'}</h2><p>${solo?'El script no guardó la marca de reembolso de estos movimientos: están en la hoja, pero sin marca. Actualiza el script y vuelve a marcarlos desde Editar.':'No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.'}</p>${rejected.map(fila).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
+  const solo=rejected.length>0&&rejected.every(m=>m.motivo==='reembolso'), pagos=rejected.length>0&&rejected.every(m=>m.motivo==='deuda'), ahor=rejected.length>0&&rejected.every(m=>m.motivo==='ahorro'), pres=rejected.length>0&&rejected.every(m=>m.motivo==='presupuesto');
+  const fila=m=>m.motivo==='presupuesto'?`<p><b>Tope de ${esc(m.categoria)}: ${esc(m.tope_eur)} €</b><br>${m.quincena==='Sí'?'Con quincena':'Solo mes'} · avisos al ${esc(m.umbrales)} %</p>`:m.motivo==='ahorro'?`<p><b>Ahorro de ${esc(m.monto_eur)} €</b><br>${esc(m.fecha)}${m.nota?' · '+esc(m.nota):''}</p>`:m.motivo==='deuda'?`<p><b>${/^pagado$/i.test(String(m.tipo||'').trim())?'Pago':'Ayuda'} de ${esc(m.monto_eur)} €</b><br>${esc(m.fecha)}${m.nota?' · '+esc(m.nota):''}</p>`:`<p><b>${esc(m.descripcion)}</b><br>${esc(m.monto)} € · ${esc(m.categoria)} · ${esc(m.fecha)}${m.motivo==='reembolso'?' · '+esc(m.reembolso):''}</p>`;
+  openSheet(`<h2>${solo?'Reembolsos sin guardar':pagos?'Registros de deuda no válidos':ahor?'Registros de ahorro no válidos':pres?'Topes de presupuesto no válidos':'Movimientos no válidos'}</h2><p>${solo?'El script no guardó la marca de reembolso de estos movimientos: están en la hoja, pero sin marca. Actualiza el script y vuelve a marcarlos desde Editar.':'No se han podido guardar en la hoja. Se han apartado para que no se pierdan: revísalos y vuelve a registrarlos si hace falta.'}</p>${rejected.map(fila).join('')}<div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary danger" id="sDel">Descartar</button></div>`);
   $('#sNo').onclick=()=>{closeSheet();sync(true)};
   $('#sDel').onclick=()=>{rejected=[];LS.set('rejected',rejected);closeSheet();sync(true)};
 }
@@ -464,7 +488,7 @@ async function run(force){
   if(halt&&!force){ if(halt.code==='bloqueado'&&Date.now()>halt.until) halt=null; else return }   // no insistir con una clave mala
   if(!navigator.onLine&&!force){setPill('off');return}
   syncing=true; again=false; setPill('sync');
-  let ok=false, code='red', apartados=0, apartadosD=0, apartadosA=0, malTag=0, dSaltado=false, aSaltado=false; const tagged=[];
+  let ok=false, code='red', apartados=0, apartadosD=0, apartadosA=0, apartadosB=0, malTag=0, dSaltado=false, aSaltado=false, bSaltado=false; const tagged=[];
   // Un envío aceptado: si se deshizo mientras viajaba, ya está en el Sheet y se manda a borrar.
   const enviado=items=>{
     for(const b of items) if(!queue.some(x=>x.id===b.id)) delQ.push(b.id);
@@ -481,6 +505,8 @@ async function run(force){
     for(const b of items) if(!aq.some(x=>x.id===b.id)) adq.push(b.id);
     aq=aq.filter(x=>!items.some(b=>b.id===x.id)); persist();
   };
+  // Topes de presupuesto: de la cola solo salen los envíos exactos (si se cambió el tope mientras viajaba, el nuevo sigue pendiente).
+  const enviadoB=items=>{ bq=bq.filter(x=>!items.includes(x)); persist() };
   try{
     while(delQ.length){ const id=delQ[0]; await api({action:'delete',id}); delQ=delQ.filter(x=>x!==id); persist() }   // ok aunque la fila ya no exista
     if(queue.length){
@@ -532,15 +558,34 @@ async function run(force){
         }
       }
     }
-    dSaltado=dBloq()>0; aSaltado=aBloq()>0;   // script antiguo (o aún sin saber): no se envía nada de eso, la cola espera
-    const d=await api({action:'data'}), dels=new Set(delQ.map(String)), ddels=new Set(ddq.map(String)), adels=new Set(adq.map(String));
-    db={movimientos:(d.movimientos||[]).filter(m=>!dels.has(String(m.id))),categorias:d.categorias||[],personas:d.personas||[],deuda:(d.deuda||[]).filter(x=>!ddels.has(String(x.id))),ahorro:(Array.isArray(d.ahorro)?d.ahorro:[]).filter(x=>!adels.has(String(x.id)))};
+    if(presupuestoOk()){
+      while(bdq.length){ const c=bdq[0]; await api({action:'budgetDelete',categoria:c}); bdq=bdq.filter(x=>x!==c); persist() }   // ok aunque ya no exista
+      while(bq.length){
+        const batch=bq.slice(0,40);
+        try{ await api({action:'budgetSet',items:batch}); enviadoB(batch) }
+        catch(e){
+          if(e.code!=='datos') throw e;
+          for(const it of batch){   // el script rechaza el lote entero si un tope falla: de uno en uno (guardar dos veces lo mismo no duplica) y solo se aparta el malo
+            try{ await api({action:'budgetSet',items:[it]}); enviadoB([it]) }
+            catch(e2){
+              if(e2.code!=='datos') throw e2;
+              if(bq.includes(it)){ bq=bq.filter(x=>x!==it); rejected.push({...it,motivo:'presupuesto'}); LS.set('rejected',rejected); persist(); apartadosB++ }
+            }
+          }
+        }
+      }
+    }
+    dSaltado=dBloq()>0; aSaltado=aBloq()>0; bSaltado=bBloq()>0;   // script antiguo (o aún sin saber): no se envía nada de eso, la cola espera
+    const d=await api({action:'data'}), dels=new Set(delQ.map(String)), ddels=new Set(ddq.map(String)), adels=new Set(adq.map(String)), bdels=new Set(bdq.map(keyT));
+    db={movimientos:(d.movimientos||[]).filter(m=>!dels.has(String(m.id))),categorias:d.categorias||[],personas:d.personas||[],deuda:(d.deuda||[]).filter(x=>!ddels.has(String(x.id))),ahorro:(Array.isArray(d.ahorro)?d.ahorro:[]).filter(x=>!adels.has(String(x.id))),presupuestos:(Array.isArray(d.presupuestos)?d.presupuestos:[]).filter(x=>x&&!bdels.has(keyT(x.categoria)))};
     for(const q of queue) if(!db.movimientos.some(m=>m.id===q.id)) db.movimientos.push(q);
     for(const q of dq) if(!db.deuda.some(x=>String(x.id)===q.id)) db.deuda.push(q);
     for(const q of aq) if(!db.ahorro.some(x=>String(x.id)===q.id)) db.ahorro.push(q);
-    caps={reembolso:d.reembolso===true,deuda:d.deudaEscritura===true,recibidos:d.deudaRecibidos===true,ahorro:d.ahorroEscritura===true}; LS.set('caps',caps);   // sin el flag la fila de reembolso, los pagos y el ahorro se ocultan y no se envía nada
+    for(const q of bq){ const k=keyT(q.categoria); db.presupuestos=db.presupuestos.filter(x=>keyT(x.categoria)!==k); db.presupuestos.push({...q}) }   // lo pendiente de enviar manda sobre lo que trae el script
+    caps={reembolso:d.reembolso===true,deuda:d.deudaEscritura===true,recibidos:d.deudaRecibidos===true,ahorro:d.ahorroEscritura===true,presupuesto:d.presupuestoEscritura===true}; LS.set('caps',caps);   // sin el flag la fila de reembolso, los pagos y el ahorro se ocultan y no se envía nada
     if(dSaltado&&dq.some(x=>deudaOk()&&enviableD(x))) again=true;   // el script ya los admite: se envían en la pasada siguiente
     if(aSaltado&&ahorroOk()) again=true;
+    if(bSaltado&&presupuestoOk()) again=true;
     // Comprobación acotada (no lanza ni frena nada): si un movimiento enviado con marca vuelve sin ella, el script no la guardó.
     if(tagged.length){ try{
       const por=new Map((d.movimientos||[]).map(m=>[String(m.id),m]));
@@ -554,12 +599,13 @@ async function run(force){
     if(malTag) toast(`El script no guardó el reembolso de ${malTag>1?malTag+' movimientos':'un movimiento'}. Toca el indicador para verlo.`);
     if(apartados) toast(`${apartados>1?apartados+' movimientos no se han':'Un movimiento no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`);
     if(apartadosA) toast(`${apartadosA>1?apartadosA+' registros de ahorro no se han':'Un registro de ahorro no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`);
+    if(apartadosB) toast(`${apartadosB>1?apartadosB+' topes de presupuesto no se han':'Un tope de presupuesto no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`);
     if(apartadosD) toast(`${apartadosD>1?apartadosD+' registros de deuda no se han':'Un registro de deuda no se ha'} podido guardar y se ha apartado. Toca el indicador para verlo.`) }
   else if(STOP_CODES.includes(code)){ halt={code,until:Date.now()+15*60000}; setPill('stop',code) }
   else if(!navigator.onLine) setPill('off');
   else if(attempt<RETRY.length){ setPill('retry'); retryT=setTimeout(()=>{retryT=null;attempt++;run()},RETRY[attempt]) }
   else setPill('fail');
-  if(again){again=false; if(queue.length||delQ.length||dq.length||ddq.length||aq.length||adq.length) sync()}   // se guardó algo mientras sincronizaba
+  if(again){again=false; if(queue.length||delQ.length||dq.length||ddq.length||aq.length||adq.length||bq.length||bdq.length) sync()}   // se guardó algo mientras sincronizaba
 }
 
 /* ---------- datos derivados ---------- */
@@ -687,7 +733,10 @@ function initAdd(){
   $('#save').onclick=save; $('#save').onmousedown=e=>e.preventDefault();   // al tocar Guardar no se cierra el teclado antes de tiempo
 }
 let toastT=null, lastAdded=null;
-function toast(msg,undo){ say(msg+(undo?'. Deshacer disponible.':'')); $('#toastTxt').textContent=msg; $('#toastBtn').style.display=undo?'':'none'; $('#toastBtn').onclick=()=>{undo&&undo();$('#toast').classList.remove('on')}; $('#toast').classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>$('#toast').classList.remove('on'),5500) }
+function toast(msg,undo,opts){   // opts.extra: segunda línea (p. ej. el aviso de un tope); con ella el aviso dura más
+  const extra=opts&&opts.extra, X=$('#toastX');
+  say(msg+(extra?'. '+extra:'')+(undo?'. Deshacer disponible.':'')); $('#toastTxt').textContent=msg; X.textContent=extra||''; X.hidden=!extra;
+  $('#toastBtn').style.display=undo?'':'none'; $('#toastBtn').onclick=()=>{undo&&undo();$('#toast').classList.remove('on')}; $('#toast').classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>$('#toast').classList.remove('on'),extra?8000:5500) }
 function removeMov(id){
   const inQ=queue.findIndex(q=>q.id===id); if(inQ>=0) queue.splice(inQ,1); else delQ.push(id);
   db.movimientos=db.movimientos.filter(m=>m.id!==id); idx=null; persist(); renderAll(); sync();
@@ -705,9 +754,10 @@ function save(){
   if(st.ambito==='LaLiga'&&st.tipo==='Gasto'&&st.reemb) item.reembolso=st.reemb;   // sin marca no se envía el campo
   for(const n of st.extraPeople) if(st.people.has(n)&&!db.personas.some(p=>p.nombre===n)) db.personas.push({nombre:n,alias:''});
   const editing=st.editId; if(editing) removeMov(editing);
+  let av=null; if(!editing){ try{ av=avisoCalc(db.movimientos,item,topes(),todayStr()) }catch{} }   // se calcula aquí, con lo que había ANTES de este gasto: ni reintentos ni sincronizaciones lo repiten
   db.movimientos.push(item); queue.push(item); idx=null; persist();
   if(editing){toast(`Cambios guardados · ${eur(monto)} en ${st.cat}`); resetForm(); tab('his'); sync(); return}
-  toast(`Guardado · ${eur(monto)} en ${st.cat}`,()=>removeMov(item.id));
+  toast(`Guardado · ${eur(monto)} en ${st.cat}`,()=>removeMov(item.id),av?{extra:av.texto}:undefined);
   resetForm(); renderPill(); sync();
 }
 
@@ -762,7 +812,7 @@ function resumenCalc(movs,o){
 }
 
 /* Secciones que se abren y cierran: se recuerda solo si están abiertas o cerradas (clave "sec") */
-const SEC_DEF={cat:true,margen:false,tend:false,quien:false,deuda:false};
+const SEC_DEF={cat:true,pres:false,margen:false,tend:false,quien:false,deuda:false};
 const secOpen=(()=>{const s=LS.get('sec',{})||{}, o={...SEC_DEF}; for(const k in SEC_DEF) if(typeof s[k]==='boolean') o[k]=s[k]; return o})();
 const CHEV='<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 const secHtml=(id,title,summary,body,foot='')=>`<section class="card sec" data-sec="${id}" data-open="${secOpen[id]}"><h2 class="sh"><button type="button" id="sb-${id}" aria-expanded="${secOpen[id]}" aria-controls="sp-${id}"><span><span class="stt">${esc(title)}</span><span class="ssum">${esc(summary)}</span></span>${CHEV}</button></h2><div class="spw"><div class="sp" id="sp-${id}" role="region" aria-labelledby="sb-${id}"><div class="sp-in">${body}</div></div></div>${foot}</section>`;
@@ -1014,6 +1064,155 @@ function borrarAhorro(id){
   $('#sOk').onclick=()=>{$('#sOk').disabled=true; closeSheet(); removeAhorro(id); toast('Foto borrada')};
 }
 
+/* ---------- presupuestos: topes por categoría (cuentas aparte de la pantalla, para poder comprobarlas) ----------
+   Solo cuenta el gasto Personal, sin reembolsos de LaLiga y sin fechas futuras. Los importes van en céntimos enteros:
+   así ningún umbral depende de decimales ni de medios céntimos (la mitad de un tope impar se compara multiplicando por 200). */
+const TOPE_MAX=1000000, TOPES_MAX=40, UMB_BASE=[80,100], UMB_TEMPRANO=[50,80,100];
+const cent=n=>Math.round(Number(n)*100);
+const keyT=c=>norm(String(c==null?'':c).trim());
+const quincenaDe=f=>+String(f).slice(8,10)<=15?1:2;                 // 1.ª: días 1-15 · 2.ª: del 16 al fin de mes
+const diasMes=ym=>new Date(+ym.slice(0,4),+ym.slice(5,7),0).getDate();
+const eurN=n=>Number.isInteger(n)?eur0(n):eur(n);
+const parseUmbrales=v=>{   // «50,80,100» (texto del script) o lista → enteros crecientes de 1 a 300, como mucho 5
+  const a=(Array.isArray(v)?v:String(v==null?'':v).split(/[\s,;]+/)).map(Number).filter(n=>Number.isInteger(n)&&n>=1&&n<=300);
+  return [...new Set(a)].sort((x,y)=>x-y).slice(0,5);
+};
+function topesNorm(rows){   // lo que manda el script → topes listos para calcular (uno por categoría, sin mirar mayúsculas ni acentos)
+  const por=new Map();
+  for(const r of Array.isArray(rows)?rows:[]){
+    const nombre=String(r&&r.categoria||'').trim(), tope=cent(r&&r.tope_eur); if(!nombre||!(tope>0)||!isFinite(tope)) continue;   // sin tope válido (p. ej. 0): como si no existiera
+    const u=parseUmbrales(r.umbrales);
+    por.set(keyT(nombre),{categoria:nombre,key:keyT(nombre),tope,quincena:r.quincena===true||norm(r.quincena)==='si',umbrales:u.length?u:UMB_BASE});
+  }
+  return [...por.values()];
+}
+const topes=()=>topesNorm(db.presupuestos);
+const topeItem=t=>({categoria:t.categoria,tope_eur:t.tope/100,quincena:t.quincena?'Sí':'No',umbrales:t.umbrales.join(',')});   // el formato que viaja al script
+function gastoPers(movs,key,ym,hoy){   // [1.ª quincena, 2.ª quincena] del mes ym, en céntimos
+  const q=[0,0];
+  for(const m of movs||[]){
+    if(!m||m.tipo!=='Gasto'||m.ambito!=='Personal'||reembolsable(m)||keyT(m.categoria)!==key) continue;
+    const f=String(m.fecha||'').slice(0,10), c=cent(m.monto);
+    if(!fechaOk(f)||f>hoy||f.slice(0,7)!==ym||!isFinite(c)) continue;
+    q[quincenaDe(f)-1]+=c;
+  }
+  return q;
+}
+// Estado de cada tope en el mes ym. La quincena (con su sobrante de la 1.ª) solo existe para el mes en curso.
+function presupuestoCalc(movs,tops,hoy,ym=hoy.slice(0,7)){
+  const actual=ym===hoy.slice(0,7), qn=quincenaDe(hoy);
+  return (tops||[]).map(t=>{
+    const [a,b]=gastoPers(movs,t.key,ym,hoy), gasto=a+b, r={...t,gasto,resto:t.tope-gasto,pasado:gasto>t.tope,pct:Math.round(gasto*100/t.tope),q:null};
+    if(t.quincena&&actual){ const g=qn===1?a:b;
+      r.q={n:qn,gasto:g,medio:t.tope/2,pasado:g*2>t.tope,pct:Math.round(g*200/t.tope),sobrante:qn===2?Math.max(0,Math.min(t.tope/2-a,t.tope-gasto)):0} }   // sobrante: solo informativo
+    return r;
+  });
+}
+// Aviso al guardar un gasto NUEVO (no al editar ni al borrar). movs = lo que había antes de este gasto.
+// Un solo aviso: si cruza un umbral, el de umbral más alto (a igualdad, el del mes); si no cruza ninguno, un recordatorio si ya estaba pasado el mes (o, si no, la quincena).
+function avisoCalc(movs,item,tops,hoy){
+  if(!item||item.tipo!=='Gasto'||item.ambito!=='Personal'||reembolsable(item)) return null;
+  const f=String(item.fecha||'').slice(0,10), mo=cent(item.monto);
+  if(!fechaOk(f)||f>hoy||f.slice(0,7)!==hoy.slice(0,7)||!(mo>0)) return null;   // futuro u otro mes: no toca al periodo actual
+  const t=(tops||[]).find(x=>x.key===keyT(item.categoria)); if(!t) return null;
+  const [a,b]=gastoPers((movs||[]).filter(m=>!m||m.id!==item.id),t.key,hoy.slice(0,7),hoy), qn=quincenaDe(hoy), enQ=t.quincena&&quincenaDe(f)===qn;
+  const mesA=a+b, mesD=mesA+mo, qA=qn===1?a:b, qD=qA+mo, cat=String(item.categoria), E=c=>eurN(c/100);
+  const sob=qn===2?Math.max(0,Math.min(t.tope/2-a,t.tope-mesD)):0, sobTxt=enQ&&sob>0?` De la primera te quedan ${E(Math.floor(sob))}.`:'';
+  const cand=[];
+  for(const p of t.umbrales){
+    if(mesA*100<p*t.tope&&p*t.tope<=mesD*100) cand.push({p,q:false});
+    if(enQ&&qA*200<p*t.tope&&p*t.tope<=qD*200) cand.push({p,q:true});
+  }
+  if(cand.length){
+    const c=cand.sort((x,y)=>y.p-x.p||x.q-y.q)[0], ex=c.q?Math.round(qD-t.tope/2):mesD-t.tope;
+    const texto=c.q
+      ?(c.p===100?(ex>0?`Te has pasado ${E(ex)} de esta quincena en ${cat}.`:`Has llegado al tope de esta quincena en ${cat}.`):`Llevas el ${c.p} % de esta quincena en ${cat}.`)+sobTxt
+      :(c.p===100?(ex>0?`Te has pasado ${E(ex)} de tu tope de ${cat} este mes.`:`Has llegado al tope de ${cat} este mes.`):`Llevas el ${c.p} % de tu tope de ${cat} este mes.`);
+    return {tipo:'umbral',periodo:c.q?'quincena':'mes',p:c.p,texto};
+  }
+  if(mesA>=t.tope) return {tipo:'recordatorio',periodo:'mes',texto:`Sigues ${E(mesD-t.tope)} por encima de tu tope de ${cat} este mes.`};
+  if(enQ&&qA*2>=t.tope) return {tipo:'recordatorio',periodo:'quincena',texto:`Sigues ${E(Math.round(qD-t.tope/2))} por encima de tu tope de ${cat} esta quincena.${sobTxt}`};
+  return null;
+}
+function setTope(item){   // un tope por categoría: lo nuevo sustituye a lo anterior (y anula un borrado pendiente)
+  const k=keyT(item.categoria);
+  bq=bq.filter(x=>keyT(x.categoria)!==k); bdq=bdq.filter(x=>keyT(x)!==k); bq.push(item);
+  db.presupuestos=db.presupuestos.filter(x=>keyT(x.categoria)!==k); db.presupuestos.push({...item}); persist();
+}
+function delTope(categoria){
+  const k=keyT(categoria);
+  bq=bq.filter(x=>keyT(x.categoria)!==k); if(!bdq.some(x=>keyT(x)===k)) bdq.push(categoria);   // ya enviado o no, el script no se queja si no existe
+  db.presupuestos=db.presupuestos.filter(x=>keyT(x.categoria)!==k); persist();
+}
+const catsPers=()=>{const pick=src=>src.filter(c=>c.tipo==='Gasto'&&c.ambito==='Personal').map(c=>c.nombre); let l=pick(cats()); if(!l.length) l=pick(DEFAULT_CATS); return [...new Set(l)]};
+const pcts=a=>a.map(x=>x+' %').join(', ').replace(/, ([^,]*)$/,' y $1');
+function abrirTope(pre){
+  if(!presupuestoOk()) return;
+  const T=topes(), por=new Map(T.map(t=>[t.key,t])), lista=catsPers();
+  for(const t of T) if(!lista.some(c=>keyT(c)===t.key)) lista.push(t.categoria);   // tope de una categoría que ya no existe: se puede quitar
+  const ini=(pre&&lista.find(c=>keyT(c)===keyT(pre)))||lista.find(c=>!por.has(keyT(c)))||lista[0];
+  let umb=new Set(), quin=false;
+  openSheet(`<h2>Tope de presupuesto</h2><p>Un tope mensual para una categoría de gasto Personal. Te aviso al guardar un gasto que cruce un umbral. No cuenta Sporture, LaLiga ni los reembolsos.</p>
+  <label for="prc">Categoría</label><select id="prc">${lista.map(c=>`<option value="${esc(c)}"${c===ini?' selected':''}>${esc(c)}${por.has(keyT(c))?' · con tope':''}</option>`).join('')}</select>
+  <label for="prm">Tope mensual (€)</label><input id="prm" inputmode="decimal" autocomplete="off" autocapitalize="off" placeholder="0">
+  <div class="tgl"><button type="button" class="chip" id="prq">Vista por quincena</button><button type="button" class="chip" id="prt">Aviso temprano (50 %)</button></div>
+  <div id="prh" class="aviso" role="status" aria-live="polite"></div>
+  <div id="pre" class="err" role="alert" hidden></div>
+  <div class="btns"><button class="secondary" id="sNo">Cancelar</button><button class="primary" id="sOk">Guardar tope</button></div>
+  <div class="btns" id="prdw"><button class="secondary" id="prDel" style="width:100%">Quitar tope</button></div>`);
+  const err=m=>{const e=$('#pre'); e.textContent=m||''; e.hidden=!m};
+  const pintar=()=>{
+    $('#prq').classList.toggle('on',quin); $('#prq').setAttribute('aria-pressed',quin);
+    $('#prt').classList.toggle('on',umb.has(50)); $('#prt').setAttribute('aria-pressed',umb.has(50));
+    const m=parseMonto($('#prm').value), a=[...umb].sort((x,y)=>x-y);
+    $('#prh').textContent=`Avisaré al llegar al ${pcts(a)} del tope${quin?'. Cada quincena (1–15 y 16–fin de mes) tiene la mitad'+(typeof m==='number'?': '+eurN(m/2):''):''}.`;
+    $('#prdw').hidden=!por.has(keyT($('#prc').value));
+  };
+  const cargar=()=>{
+    const c=$('#prc').value, t=por.get(keyT(c)); err('');
+    if(t){ umb=new Set(t.umbrales); quin=t.quincena; $('#prm').value=String(t.tope/100).replace('.',',') }
+    else { const sal=keyT(c)==='salidas'; umb=new Set(sal?UMB_TEMPRANO:UMB_BASE); quin=sal; $('#prm').value='' }   // Salidas: quincena y 50/80/100 de entrada
+    pintar();
+  };
+  $('#prc').onchange=cargar; $('#prm').oninput=pintar;
+  $('#prq').onclick=()=>{quin=!quin; pintar()};
+  $('#prt').onclick=()=>{umb.has(50)?umb.delete(50):umb.add(50); pintar()};
+  $('#sNo').onclick=()=>{closeSheet(); foco('#btnTope')};
+  $('#prDel').onclick=()=>{
+    const c=$('#prc').value, prev=por.get(keyT(c)); if(!prev) return;
+    $('#prDel').disabled=true; delTope(c); closeSheet(); renderAll(); foco('#btnTope');
+    setTimeout(()=>toast(`Tope quitado · ${c}`,()=>{setTope(topeItem(prev)); renderAll(); sync()}),400); sync();
+  };
+  $('#sOk').onclick=()=>{
+    const c=$('#prc').value, m=parseMonto($('#prm').value);
+    if(typeof m!=='number'){err(m); $('#prm').focus(); return}
+    if(m>TOPE_MAX){err('El tope máximo es 1.000.000 €.'); $('#prm').focus(); return}
+    if(/^[=+\-@]/.test(c)){err('Esa categoría no se puede usar en un tope.'); return}
+    if(!por.has(keyT(c))&&T.length>=TOPES_MAX){err(`Puedes tener hasta ${TOPES_MAX} topes.`); return}
+    $('#sOk').disabled=true;   // un solo toque, un solo guardado
+    const prev=por.get(keyT(c)), item={categoria:c,tope_eur:m,quincena:quin?'Sí':'No',umbrales:[...umb].sort((x,y)=>x-y).join(',')};
+    setTope(item); closeSheet(); renderAll(); foco('#btnTope');
+    setTimeout(()=>toast(`Tope guardado · ${c} · ${eurN(m)}`,()=>{prev?setTope(topeItem(prev)):delTope(c); renderAll(); sync()}),400);   // un segundo toque rápido en Guardar no debe caer en «Deshacer»
+    sync();
+  };
+  cargar(); foco('#prm');
+}
+function presSec(hoy){
+  const ok=presupuestoOk(), T=topes();
+  if(!T.length&&!ok) return '';
+  const P=presupuestoCalc(db.movimientos,T,hoy,sum.ym).sort((a,b)=>b.pct-a.pct), pas=P.filter(p=>p.pasado||(p.q&&p.q.pasado)).length;
+  const resumen=!P.length?'Sin topes todavía':pas?`${pas} ${pas>1?'pasados':'pasado'} de su tope`:`${P.length} ${P.length>1?'topes':'tope'}, todo dentro`;
+  const bar=(pct,over)=>`<span class="bar${over?' over':''}"><i style="width:${pct>0?Math.max(2,Math.min(100,pct)):0}%"></i></span>`;
+  const fila=p=>{
+    let h=`<span class="pn"><span class="n">${esc(p.categoria)}</span><span class="v${p.pasado?' neg':''}">${esc(eurN(p.gasto/100))} de ${esc(eurN(p.tope/100))}<small>${p.pct} %</small></span></span>${bar(p.pct,p.pasado)}<span class="ms${p.pasado?' neg':''}">${p.pasado?`Por encima del tope: ${esc(eurN(-p.resto/100))} de más este mes`:`Te quedan ${esc(eurN(p.resto/100))} este mes`}</span>`;
+    const q=p.q;
+    if(q) h+=`<span class="qb"><span class="pn"><span class="n">Quincena ${q.n}<small>${q.n===1?'1–15':'16–'+diasMes(sum.ym)}</small></span><span class="v${q.pasado?' neg':''}">${esc(eurN(q.gasto/100))} de ${esc(eurN(q.medio/100))}<small>${q.pct} %</small></span></span>${bar(q.pct,q.pasado)}<span class="ms${q.pasado?' neg':''}">${q.pasado?`Por encima de la quincena: ${esc(eurN(Math.round(q.gasto-q.medio)/100))} de más`:`Te quedan ${esc(eurN(Math.floor(q.medio-q.gasto)/100))} en esta quincena`}</span>${q.sobrante>0?`<span class="ms">De la primera te quedan ${esc(eurN(Math.floor(q.sobrante)/100))} (solo informativo: el límite real es el del mes)</span>`:''}</span>`;
+    return ok?`<button type="button" class="pres pbtn" data-tope="${esc(p.categoria)}">${h}<span class="sr-only"> Toca para editar este tope</span></button>`:`<div class="pres">${h}</div>`;
+  };
+  const body=`<p class="sub">${esc(ymLabel(sum.ym))} · gasto Personal${ok&&P.length?' · toca un tope para editarlo':''}</p>${P.length?P.map(fila).join('')+'<p class="note">No cuentan Sporture, LaLiga ni los reembolsos. Un gasto con fecha futura no cuenta hasta que llegue su día.</p>':emptyBlock('chart','Aún no hay topes',ok?'Pon un tope mensual a una categoría y te aviso al acercarte.':'Para crear topes hace falta sincronizar con el script actualizado.')}`;
+  return secHtml('pres','Presupuestos',resumen,body,ok?'<div class="sec-foot"><button class="primary" id="btnTope" type="button">Añadir o editar un tope</button></div>':'');
+}
+
 function renderSum(){
   applyTheme();
   const v=$('#v-sum'), cur=todayStr().slice(0,7), hoy=todayStr();
@@ -1044,7 +1243,7 @@ function renderSum(){
   // deuda (solo Personal)
   const D=deudaCalc(db.deuda), dEsc=deudaOk(), MG=sum.scope==='Todo'?margenCalc(db.movimientos,ahorros(),hoy,db.deuda):null;
 
-  const secMargen=sum.scope==='Todo'?margenSec(MG):'';
+  const secMargen=sum.scope==='Todo'?margenSec(MG):'', secPres=sum.scope==='Personal'?presSec(hoy):'';
   // tarjeta de indicadores
   let delta='';
   if(cmp){
@@ -1082,7 +1281,7 @@ function renderSum(){
   <div class="seg perseg" id="perSeg" role="group" aria-label="Periodo">${[['mes','Mes'],['12','12 meses']].map(([k,l])=>`<button data-v="${k}" class="${k===sum.period?'on':''}" aria-pressed="${k===sum.period}">${l}</button>`).join('')}</div>
   <div class="card hero"><p class="kl">${enMes?'Gasto de '+mesTxt:'Gasto de los últimos 12 meses'}</p><div class="big">${eur0(gasto)}</div>${delta}
     ${kpis.length?`<div class="kpis">${kpis.join('')}</div>`:''}</div>
-  ${secCat}${secMargen}${secTend}${secQuien}${secDeuda}`;
+  ${secCat}${secPres}${secMargen}${secTend}${secQuien}${secDeuda}`;
   $('#scopeSeg').onclick=e=>{if(e.target.dataset.v){sum.scope=e.target.dataset.v;renderSum()}};
   $('#perSeg').onclick=e=>{if(e.target.dataset.v){sum.period=e.target.dataset.v;renderSum()}};
   $('#pm').onclick=()=>{sum.ym=ymAdd(sum.ym,-1);renderSum()}; $('#nm').onclick=()=>{sum.ym=ymAdd(sum.ym,1);renderSum()};
@@ -1092,6 +1291,8 @@ function renderSum(){
     secOpen[id]=o; s.dataset.open=o; b.setAttribute('aria-expanded',o); LS.set('sec',secOpen)});
   if(fid){const e=document.getElementById(fid); if(e&&v.contains(e)) e.focus({preventScroll:true})}
   if($('#btnSim')) $('#btnSim').onclick=()=>abrirSim(MG);
+  if($('#btnTope')) $('#btnTope').onclick=()=>abrirTope();
+  v.querySelectorAll('[data-tope]').forEach(b=>b.onclick=()=>abrirTope(b.dataset.tope));
   if($('#btnAhorro')) $('#btnAhorro').onclick=abrirAhorro;
   if($('#btnPago')) $('#btnPago').onclick=()=>abrirPago('Pagado');
   if($('#btnAyuda')) $('#btnAyuda').onclick=()=>abrirPago('Recibido');
@@ -1134,10 +1335,12 @@ function openSettings(first){
   <div id="cerr" class="err" hidden></div>
   <div class="btns"><button class="secondary" id="sNo">${first===true?'Más tarde':'Cerrar'}</button><button class="primary" id="sOk">Conectar</button></div>
   ${first===true?'':ahorroRowHtml()}
+  ${first===true?'':presRowHtml()}
   ${first===true?'':bkRowHtml()}
   ${first===true?'':'<div class="btns"><button class="secondary" id="sReset" style="width:100%;min-height:46px">Borrar datos de este móvil</button></div>'}`);
   if($('#sNo')) $('#sNo').onclick=closeSheet;
   if($('#sAh')) $('#sAh').onclick=abrirAhorro;
+  if($('#sPr')) $('#sPr').onclick=()=>abrirTope();
   if($('#sBk')) $('#sBk').onclick=()=>{LS.set('bk',todayStr()); LS.set('bksnz',null); $('#bkLine').textContent='Última copia del Sheet: '+fechaLarga(todayStr()); $('#sBk').disabled=true; $('#sBk').textContent='Hecha hoy'; renderCopia(); say('Copia anotada: hoy')};
   if($('#sReset')) $('#sReset').onclick=()=>{if(confirm('Se borra la copia local y los movimientos sin sincronizar. ¿Seguir?')){localStorage.clear();location.reload()}};
   $('#sOk').onclick=async()=>{
