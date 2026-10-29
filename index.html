@@ -266,6 +266,11 @@ svg g[data-ym]{outline:none} svg g[data-ym]:focus-visible rect{stroke:var(--focu
 .mbtn{min-height:2.75rem;padding:0 1rem;border-radius:1rem;font-size:.9375rem;margin-top:.5rem;max-width:100%}
 .mrow .mbtn{flex:1 0 100%}
 #btnSim{margin-top:1rem;width:100%}
+/* copiar resumen */
+.cpwrap{margin:.25rem 0 1rem}
+#btnCopiar{width:100%;min-height:2.75rem;height:auto;padding:.5rem 1rem;line-height:1.25;white-space:normal;overflow-wrap:anywhere}
+.cpwrap .note{margin:.5rem .25rem 0;text-align:center}
+#sheet textarea{width:100%;min-height:10rem;max-height:50dvh;border-radius:.875rem;border:1.5px solid var(--line);background:var(--inp);color:var(--cink);padding:.75rem 1rem;font:400 max(16px,1rem)/1.4 var(--sans);resize:none;-webkit-user-select:text;user-select:text}
 /* presupuestos */
 .pres{display:block;padding:.75rem 0}
 .pres+.pres{border-top:1px solid var(--line)}
@@ -829,7 +834,8 @@ function deudaCalc(rows){
 }
 /* ---------- margen: indicadores de «Tu margen» (cálculo aparte de la pantalla, para poder comprobarlo) ---------- */
 // Categorías que cuentan como gasto fijo (se comparan sin mayúsculas ni acentos). Se editan aquí.
-const FIJAS=['Renta','Teléfono/Internet','Suscripciones','Cuota autónomo','Gestoría'].map(norm);
+const FIJAS_NOMBRES=['Renta','Teléfono/Internet','Suscripciones','Cuota autónomo','Gestoría'];
+const FIJAS=FIJAS_NOMBRES.map(norm);
 const esFija=c=>FIJAS.includes(norm(c));
 const reembolsable=m=>m.ambito==='LaLiga'&&(m.reembolso==='A reembolsar'||m.reembolso==='Reembolsado');   // el dinero vuelve: no es gasto del margen
 const MIN_GASTOS=5, MIN_DIAS=3, VENTANA=6, MIN_TIPICO=3, MIN_BALANCE=2, AHORRO_VIEJO=60;
@@ -847,16 +853,22 @@ function ahorroActual(rows,hoy){   // la foto más reciente que no sea futura; a
   return best;
 }
 function margenCalc(movs,ahorroRows,hoy,deudaRows){
-  const cur=hoy.slice(0,7), por={};
+  const cur=hoy.slice(0,7), por={}, AMBITOS=['Personal','Sporture','LaLiga'];
+  const nuevoMes=()=>({gasto:0,fijo:0,ingreso:0,n:0,dias:new Set(),amb:{},cat:{Personal:new Map(),Sporture:new Map(),LaLiga:new Map()}});   // cat: gasto por categoría y ámbito (Map: el nombre de una categoría no puede chocar con nada)
   for(const m of movs||[]){
     const ym=String(m.fecha||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(ym)||ym>=cur) continue;   // solo meses completos ya pasados
     const mo=Number(m.monto); if(!isFinite(mo)) continue;
-    const s=por[ym]||(por[ym]={gasto:0,fijo:0,ingreso:0,n:0,dias:new Set(),amb:{}}), a=s.amb[m.ambito]||(s.amb[m.ambito]={gasto:0,ingreso:0});
+    const s=por[ym]||(por[ym]=nuevoMes()), a=s.amb[m.ambito]||(s.amb[m.ambito]={gasto:0,ingreso:0});
     if(m.tipo==='Ingreso'){ s.ingreso+=mo; a.ingreso+=mo }
-    else if(m.tipo==='Gasto'&&!reembolsable(m)){ s.gasto+=mo; a.gasto+=mo; if(esFija(m.categoria)) s.fijo+=mo; s.n++; s.dias.add(String(m.fecha).slice(0,10)) }
+    else if(m.tipo==='Gasto'&&!reembolsable(m)){
+      s.gasto+=mo; a.gasto+=mo; if(esFija(m.categoria)) s.fijo+=mo; s.n++; s.dias.add(String(m.fecha).slice(0,10));
+      const mapa=s.cat[m.ambito];
+      if(mapa){ const nom=String(m.categoria||'').trim()||'Sin categoría', k=norm(nom), c=mapa.get(k)||{nombre:nom,total:0,n:0}; c.total+=mo; c.n++; mapa.set(k,c) }
+    }
   }
-  const vacio={gasto:0,fijo:0,ingreso:0,n:0,dias:new Set(),amb:{}}, get=ym=>por[ym]||vacio, valido=s=>s.n>=MIN_GASTOS&&s.dias.size>=MIN_DIAS;
-  const ventana=[]; for(let k=1;k<=36&&ventana.length<VENTANA;k++){ const ym=ymAdd(cur,-k), s=get(ym); if(valido(s)) ventana.push(s) }
+  const vacio=nuevoMes(), get=ym=>por[ym]||vacio, valido=s=>s.n>=MIN_GASTOS&&s.dias.size>=MIN_DIAS;
+  const ventana=[], usados=[], excluidos=[];   // usados: meses válidos (el más reciente primero); excluidos: meses con gastos pero pocos datos, dentro del tramo que se ha mirado
+  for(let k=1;k<=36&&ventana.length<VENTANA;k++){ const ym=ymAdd(cur,-k), s=get(ym); if(valido(s)){ ventana.push(s); usados.push(ym) } else if(s.n>0) excluidos.push({ym,n:s.n,dias:s.dias.size}) }
   const nV=ventana.length, tipico=nV>=MIN_TIPICO?mediana(ventana.map(s=>s.gasto)):null;
   const fijo=tipico==null?null:mediana(ventana.map(s=>s.fijo)), variable=tipico==null?null:r2(tipico-fijo);
   const conIng=ventana.filter(s=>s.ingreso>0).length;
@@ -876,7 +888,14 @@ function margenCalc(movs,ahorroRows,hoy,deudaRows){
   const mesesB=new Set(vr.map(x=>x.ym)), ayudas=balance3?r2((deudaRows||[]).reduce((a,d)=>String(d.tipo||'').trim().toLowerCase()==='recibido'&&mesesB.has(String(d.fecha||'').slice(0,7))&&!/saldo inicial/.test(norm(d.nota))&&Number(d.monto_eur)>0?a+Number(d.monto_eur):a,0)):0;
   const A=ahorroActual(ahorroRows,hoy), colchon=A&&tipico>0?Math.round(A.monto/tipico*10)/10:null;
   const pend=(movs||[]).filter(m=>m.tipo==='Gasto'&&m.ambito==='LaLiga'&&m.reembolso==='A reembolsar');
-  return {nV,tipico,fijo,variable,ingresoMedio,ingMin:nV?r2(Math.min(...ventana.map(s=>s.ingreso))):null,ingMax:nV?r2(Math.max(...ventana.map(s=>s.ingreso))):null,
+  // Por ámbito, cada categoría con su total en los meses válidos y su promedio mensual (los meses sin gasto cuentan 0: se divide entre todos los meses válidos)
+  const catPorAmbito={};
+  for(const n of AMBITOS){
+    const acc=new Map();
+    ventana.forEach((s,i)=>{ for(const [k,c] of s.cat[n]){ const o=acc.get(k)||{cat:c.nombre,total:0,n:0,meses:0,porMes:{}}; o.total+=c.total; o.n+=c.n; o.meses++; o.porMes[usados[i]]=r2(c.total); acc.set(k,o) } });
+    catPorAmbito[n]=[...acc.values()].map(o=>({...o,total:r2(o.total),prom:r2(o.total/nV)})).sort((a,b)=>b.prom-a.prom||a.cat.localeCompare(b.cat,'es'));
+  }
+  return {usados,excluidos,catPorAmbito,mesesConIngreso:conIng,nV,tipico,fijo,variable,ingresoMedio,ingMin:nV?r2(Math.min(...ventana.map(s=>s.ingreso))):null,ingMax:nV?r2(Math.max(...ventana.map(s=>s.ingreso))):null,
     margen,porAmbito,rec,balance3,ayudas,tendencia,ahorro:A,colchon,diasAhorro:A?diasEntre(A.fecha,hoy):null,porCobrar:{n:pend.length,total:sumBy(pend,m=>m.monto)}};
 }
 // Simulador «¿Y si…?»: solo cuentas, no guarda nada. Los campos vacíos llegan como null.
@@ -1025,6 +1044,108 @@ function abrirSim(M){
   };
   for(const id of ['smi','smp','sme','smm']) $('#'+id).oninput=calc;
   calc(); foco('#smi');
+}
+/* ---------- copiar resumen: texto plano para pegar en un chat. Todo sale de los datos del móvil; no se guarda ni se envía nada ---------- */
+function gastoMesAmbito(movs,hoy){   // gasto de cada ámbito en el mes en curso, hasta hoy y sin reembolsos
+  const ym=hoy.slice(0,7), o={Personal:0,Sporture:0,LaLiga:0};
+  for(const m of movs||[]){
+    if(!m||m.tipo!=='Gasto'||!(m.ambito in o)||reembolsable(m)) continue;
+    const f=String(m.fecha||'').slice(0,10), mo=Number(m.monto);
+    if(fechaOk(f)&&f<=hoy&&f.slice(0,7)===ym&&isFinite(mo)) o[m.ambito]+=mo;
+  }
+  for(const k in o) o[k]=r2(o[k]);
+  return o;
+}
+function resumenTexto({hoy,M,D,P,mes}){
+  const sp=s=>String(s).replace(/[  ]/g,' '), E=n=>sp(eurN(n)), SG=n=>sp(sgn(n)), mT=ym=>`${MES[+ym.slice(5)-1]} ${ym.slice(0,4)}`;
+  const plural=(n,u,p)=>`${n} ${n===1?u:p}`, L=[], pers=(M.catPorAmbito.Personal||[]);
+  L.push(`RESUMEN DE GASTOS E INGRESOS · ${fechaLarga(hoy)}`,'Importes en euros. No cuentan los reembolsos de LaLiga ni los pagos de la deuda. Solo meses completos, sin el mes en curso.');
+  L.push('','MESES USADOS');
+  L.push(M.nV?`Válidos (${M.nV}): ${M.usados.slice().reverse().map(mT).join(', ')}.`:'Ninguno todavía.');
+  if(M.excluidos.length) L.push(`Excluidos por pocos datos (${M.excluidos.length}): ${M.excluidos.slice().reverse().map(x=>`${mT(x.ym)} (${plural(x.n,'gasto','gastos')} en ${plural(x.dias,'día','días')})`).join(', ')}.`);
+  L.push(`Regla: un mes cuenta si tiene al menos ${MIN_GASTOS} gastos en ${MIN_DIAS} días distintos; se usan hasta ${VENTANA} meses.`);
+  L.push('','GASTO TÍPICO');
+  if(M.tipico!=null){
+    L.push(`Mediana mensual: ${E(M.tipico)}`,`Fijos: ${E(M.fijo)}${M.tipico>0?` (${Math.round(M.fijo/M.tipico*100)} %)`:''} · Variables: ${E(M.variable)}`,`Se cuentan como fijos: ${FIJAS_NOMBRES.join(', ')}.`);
+  } else L.push(`Sin datos suficientes: hacen falta ${MIN_TIPICO} meses válidos y hay ${M.nV}.`);
+  L.push('',`PROMEDIO MENSUAL POR CATEGORÍA (solo Personal${M.nV?`, ${plural(M.nV,'mes válido','meses válidos')}`:''})`);
+  if(M.nV<MIN_TIPICO) L.push(`Sin datos suficientes: hacen falta ${MIN_TIPICO} meses válidos y hay ${M.nV}.`);
+  else if(!pers.length) L.push('Sin gastos Personal en esos meses.');
+  else {
+    for(const c of pers) L.push(`- ${c.cat}: ${E(c.prom)} (con gasto en ${c.meses} de ${M.nV} meses)`);
+    L.push(`Suma de promedios: ${E(r2(pers.reduce((a,c)=>a+c.prom,0)))}`,'Los meses sin gasto cuentan como 0. Esta suma no coincide con el gasto típico: aquí se promedia cada categoría solo de Personal, y el gasto típico es la mediana del total de cada mes e incluye Sporture y LaLiga.');
+  }
+  L.push('','INGRESOS Y BALANCE');
+  L.push(M.ingresoMedio!=null?`Ingreso medio: ${E(M.ingresoMedio)} al mes (de ${E(M.ingMin)} a ${E(M.ingMax)})`:'Ingreso medio: sin datos suficientes (necesito ingresos en al menos 2 meses válidos).');
+  if(M.balance3){
+    const b=M.balance3;
+    L.push(`Balance de los 3 últimos meses: ${SG(b.total)} (${b.meses.slice().reverse().map(x=>`${mT(x.ym)}: ${x.valido?SG(x.balance):'pocos datos, no cuenta'}`).join(' · ')})`);
+    L.push(`Tendencia: ${M.tendencia||'sin comparación todavía'}`);
+    if(M.ayudas>0) L.push(`Ayudas de los padres en esos meses: ${E(M.ayudas)}`);
+  } else L.push('Balance de los 3 últimos meses: sin datos suficientes (necesito 2 de los 3 con datos).');
+  L.push('','AHORRO Y COLCHÓN');
+  if(M.ahorro){
+    L.push(`Ahorro actual: ${E(M.ahorro.monto)} (foto del ${fechaCorta(M.ahorro.fecha)})`);
+    L.push(M.colchon!=null?`Colchón: ${nMeses(M.colchon)} del gasto típico (${etiquetaColchon(M.colchon)})`:'Colchón: sin datos suficientes (necesito el gasto típico).');
+  } else L.push('Ahorro: sin registrar.');
+  L.push('','DEUDA CON LOS PADRES');
+  if(D.recibido||D.pagado) L.push(`${D.saldo<0?'Pagado de más':'Saldo pendiente'}: ${E(Math.abs(D.saldo))}`,`Ayudas recibidas: ${E(D.recibido)} · Pagado: ${E(D.pagado)}`);
+  else L.push('Sin movimientos de deuda.');
+  L.push('',`PRESUPUESTOS (${mT(hoy.slice(0,7))}, gasto Personal)`);
+  if(P.length) for(const p of P.slice().sort((a,b)=>b.pct-a.pct)) L.push(`- ${p.categoria}: ${E(p.gasto/100)} de ${E(p.tope/100)} (${p.pct} %)${p.pasado?' · pasado del tope':''}`);
+  else L.push('Sin topes definidos.');
+  L.push('','ÁMBITOS (promedio mensual de los meses válidos · gastado este mes)');
+  for(const n of ['Personal','Sporture','LaLiga']){
+    const a=M.porAmbito&&M.porAmbito.find(x=>x.ambito===n);
+    L.push(`- ${n}: ${a?`gasto ${E(a.gasto)}, ingresos ${E(a.ingreso)} al mes`:'media sin datos suficientes'} · este mes gastado ${E(mes[n])}`);
+  }
+  // calidad de datos
+  const av=[];
+  if(M.nV<MIN_TIPICO) av.push(`Solo ${plural(M.nV,'mes válido','meses válidos')}: las medias no son fiables.`);
+  if(M.excluidos.length) av.push(`${plural(M.excluidos.length,'mes excluido','meses excluidos')} por pocos datos.`);
+  const pocas=M.nV>=MIN_TIPICO?pers.filter(c=>c.n<3):[];
+  if(pocas.length) av.push(`Categorías de Personal con menos de 3 registros en esos meses: ${pocas.slice(0,6).map(c=>c.cat).join(', ')}${pocas.length>6?` y ${pocas.length-6} más`:''}.`);
+  const tot=pers.reduce((a,c)=>a+c.total,0), otros=pers.find(c=>norm(c.cat)==='otros');
+  if(otros&&tot>0&&otros.total/tot>=0.2) av.push(`«Otros» pesa el ${Math.round(otros.total/tot*100)} % del gasto Personal: puede esconder categorías sin clasificar.`);
+  if(M.nV>=MIN_TIPICO&&M.ingresoMedio==null) av.push(`Ingresos registrados en ${plural(M.mesesConIngreso,'mes','meses')} de ${M.nV}.`);
+  if(M.ahorro&&M.diasAhorro>AHORRO_VIEJO) av.push(`La foto del ahorro tiene ${M.diasAhorro} días.`);
+  L.push('','CALIDAD DE DATOS',av.length?av.map(x=>'- '+x).join('\n'):'Sin avisos.');
+  return L.join('\n');
+}
+const resumenDatos=hoy=>({hoy,M:margenCalc(db.movimientos,ahorros(),hoy,db.deuda),D:deudaCalc(db.deuda),P:presupuestoCalc(db.movimientos,topes(),hoy),mes:gastoMesAmbito(db.movimientos,hoy)});
+// Copiado en tres niveles. iOS exige que la copia salga de un toque directo: nada de esperar antes de empezar.
+function copiarPortapapeles(texto,hecho,fallo){
+  let fin=false; const fin1=ok=>{if(fin) return; fin=true; ok?hecho():fallo()};
+  const respaldo=()=>{   // 2.º nivel: cuadro de texto temporal + orden de copiar (puede fallar fuera del toque; entonces, 3.er nivel)
+    let ok=false, ta=null; const prev=document.activeElement;
+    try{
+      ta=document.createElement('textarea'); ta.value=texto; ta.setAttribute('aria-hidden','true'); ta.tabIndex=-1;
+      ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px';   // 16 px: iOS no hace zoom
+      document.body.appendChild(ta); ta.focus({preventScroll:true}); ta.select(); ta.setSelectionRange(0,texto.length);
+      ok=document.execCommand('copy');
+    }catch{ ok=false }
+    if(ta&&ta.parentNode) ta.parentNode.removeChild(ta);
+    if(prev&&prev!==document.body&&document.contains(prev)&&prev.focus) prev.focus({preventScroll:true});   // el foco vuelve al botón (si no, la hoja de copia no sabría adónde devolverlo)
+    fin1(ok);
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
+    let p; try{ p=navigator.clipboard.writeText(texto) }catch{ p=null }
+    if(p&&p.then){ const t=setTimeout(respaldo,3000); p.then(()=>{clearTimeout(t); fin1(true)},()=>{clearTimeout(t); respaldo()}); return }   // si no responde en 3 s, se prueba el respaldo
+  }
+  respaldo();
+}
+function abrirCopia(texto){   // 3.er nivel: el texto a la vista, seleccionado, para copiarlo a mano
+  openSheet(`<h2>Copia el resumen</h2><p>No he podido copiarlo solo. Mantén pulsado sobre el texto y elige «Copiar».</p>
+  <label for="cpt">Resumen</label><textarea id="cpt" readonly rows="10"></textarea>
+  <div class="btns"><button class="secondary" id="sNo">Cerrar</button><button class="primary" id="cpSel">Seleccionar todo</button></div>`);
+  const ta=$('#cpt'); ta.value=texto;
+  const sel=()=>{ta.focus({preventScroll:true}); ta.select(); ta.setSelectionRange(0,texto.length)};
+  $('#cpSel').onclick=sel; $('#sNo').onclick=closeSheet;
+  setTimeout(sel,80);
+}
+function copiarResumen(){
+  const texto=resumenTexto(resumenDatos(todayStr()));   // se prepara antes de copiar: dentro del toque no hay esperas
+  copiarPortapapeles(texto,()=>toast('Resumen copiado. Ya puedes pegarlo.'),()=>abrirCopia(texto));
 }
 function abrirAhorro(){
   if(!ahorroOk()) return;
@@ -1281,7 +1402,9 @@ function renderSum(){
   <div class="seg perseg" id="perSeg" role="group" aria-label="Periodo">${[['mes','Mes'],['12','12 meses']].map(([k,l])=>`<button data-v="${k}" class="${k===sum.period?'on':''}" aria-pressed="${k===sum.period}">${l}</button>`).join('')}</div>
   <div class="card hero"><p class="kl">${enMes?'Gasto de '+mesTxt:'Gasto de los últimos 12 meses'}</p><div class="big">${eur0(gasto)}</div>${delta}
     ${kpis.length?`<div class="kpis">${kpis.join('')}</div>`:''}</div>
-  ${secCat}${secPres}${secMargen}${secTend}${secQuien}${secDeuda}`;
+  ${secCat}${secPres}${secMargen}${secTend}${secQuien}${secDeuda}
+  <div class="cpwrap"><button type="button" class="secondary" id="btnCopiar" aria-describedby="cpNota">Copiar resumen</button><p class="note" id="cpNota">Copia un resumen en texto para pegarlo en un chat. No se guarda ni se envía nada.</p></div>`;
+  $('#btnCopiar').onclick=copiarResumen;
   $('#scopeSeg').onclick=e=>{if(e.target.dataset.v){sum.scope=e.target.dataset.v;renderSum()}};
   $('#perSeg').onclick=e=>{if(e.target.dataset.v){sum.period=e.target.dataset.v;renderSum()}};
   $('#pm').onclick=()=>{sum.ym=ymAdd(sum.ym,-1);renderSum()}; $('#nm').onclick=()=>{sum.ym=ymAdd(sum.ym,1);renderSum()};
