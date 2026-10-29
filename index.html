@@ -59,13 +59,18 @@
   --num:var(--sans);
   --sat:env(safe-area-inset-top,0); --sab:env(safe-area-inset-bottom,0);
 }
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}   /* manipulation: sin zoom por doble toque (el scroll sigue igual) */
 [hidden]{display:none!important}
 html,body{height:100%;margin:0}
 html{font-size:calc(var(--fs,1) * 16px)}
 body{background:var(--bg);color:var(--ink);font:400 1rem/1.4 var(--sans);overscroll-behavior:none;-webkit-text-size-adjust:100%}
 button,input,select{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer;padding:0}
+/* sensación de app: sin rebote en los bordes ni menú de copiar al mantener pulsado un botón; los campos y los textos de las hojas siguen normales */
+html,body{overscroll-behavior:none}
+main,#sheet{overscroll-behavior:contain}
+button,[role=button]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+input,textarea,select,#cpt{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:0.75rem}
 #app{display:flex;flex-direction:column;height:100dvh;max-width:560px;margin:0 auto;position:relative}
 header{flex:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 1rem;min-height:calc(var(--sat) + 3.25rem);padding:calc(var(--sat) + .5rem) 24px 0}
@@ -160,7 +165,7 @@ main{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scro
 .detail div span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .detail div span:last-child{font-variant-numeric:tabular-nums;color:var(--cink)}
 #perSeg button{font-size:0.875rem;padding:0 0.5rem;white-space:nowrap}
-select{background:var(--inp);color:var(--cink);border:0;border-radius:0.75rem;min-height:2.75rem;padding:0 0.75rem;font-size:0.875rem;max-width:55%}
+select{background:var(--inp);color:var(--cink);border:0;border-radius:0.75rem;min-height:2.75rem;padding:0 0.75rem;font-size:max(16px,0.875rem);max-width:55%}   /* 16 px como mínimo: con menos, el iPhone hace zoom al abrirlo */
 .head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:0.5rem;margin-bottom:0.5rem}
 .note{font-size:0.7812rem;color:var(--cmuted);margin:1rem 0 0}
 svg text{font-family:var(--sans)}
@@ -1513,6 +1518,8 @@ window.addEventListener('online',()=>sync()); window.addEventListener('offline',
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){ sync(); renderPill(); renderCopia() }});
 setInterval(()=>{renderPill(); renderCopia()},30000);
 
+// Sin pellizco para ampliar (el iPhone ignora user-scalable=no): se cancelan los gestos de zoom. El tamaño del texto del sistema se sigue respetando (hasta ×1,3).
+for(const g of ['gesturestart','gesturechange','gestureend']) document.addEventListener(g,e=>e.preventDefault(),{passive:false});
 if(window.visualViewport){
   const vv=visualViewport, fit=()=>{const kb=innerHeight-vv.height, on=kb>120&&vv.scale<1.05; $('#app').style.height=on?vv.height+'px':''; if(on){window.scrollTo(0,0); setTimeout(fitTyping,0)}};
   vv.addEventListener('resize',fit); vv.addEventListener('scroll',fit);
